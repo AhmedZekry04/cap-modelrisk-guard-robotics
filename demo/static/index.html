@@ -331,6 +331,7 @@ details.tech > summary:hover { color: var(--text); }
           <div><div class="k">Cable force <small>· limit 20 N (configured simulation threshold)</small></div><div class="v" id="hudForce">—<small>N</small></div></div>
           <div><div class="k">Simulator clearance</div><div class="v" id="hudClear">—<small>mm</small></div></div>
           <div><div class="k">Peak force</div><div class="v" id="hudPeak">—<small>N</small></div></div>
+          <div style="flex-basis:100%;width:100%"><div class="k">Robot sensors</div><div id="hudSensors" style="font-size:0.78em;color:#cbd5e1;font-family:ui-monospace,Consolas,monospace;white-space:normal">—</div></div>
         </div>
         <div class="overlay legend">
           <span><i style="background:#38bdf8"></i>Target transceiver</span>
@@ -792,6 +793,16 @@ function renderHud(frame) {
   setNum('hudForce', h.cable_force_n, 1, isNum(h.cable_force_n) ? (h.cable_force_n > FORCE_LIMIT ? 'bad' : h.cable_force_n > 0.5 ? 'warn' : 'ok') : '', 'N');
   setNum('hudClear', h.min_clearance_mm, 1, isNum(h.min_clearance_mm) ? (h.min_clearance_mm < 0 ? 'bad' : h.min_clearance_mm < 5 ? 'warn' : 'ok') : '', 'mm');
   setNum('hudPeak', h.peak_force_n, 1, isNum(h.peak_force_n) ? (h.peak_force_n > FORCE_LIMIT ? 'bad' : '') : '', 'N');
+  var s = h.sensors;
+  if (s && typeof s === 'object') {
+    var parts = [];
+    if (isNum(s.touch_n)) parts.push('touch ' + s.touch_n.toFixed(1) + ' N' + (isNum(s.touch_peak_n) ? ' (peak ' + s.touch_peak_n.toFixed(1) + ')' : ''));
+    if (isNum(s.camera_clearance_mm)) parts.push('camera ' + s.camera_clearance_mm.toFixed(1) + ' mm ' + (s.camera_confidence || '')); else if (s.camera_confidence) parts.push('camera ' + s.camera_confidence);
+    if (Array.isArray(s.joints_deg)) parts.push('joints [' + s.joints_deg.map(function (v) { return isNum(v) ? v.toFixed(0) : '?'; }).join(', ') + ']°');
+    if (isNum(s.ik_error_mm)) parts.push('IK err ' + s.ik_error_mm.toFixed(2) + ' mm');
+    if (s.robot) parts.push(s.robot);
+    $('hudSensors').textContent = parts.length ? parts.join(' · ') : '—';
+  }
 }
 function imageBox() {
   var img = $('mainImg'), vp = $('camView');

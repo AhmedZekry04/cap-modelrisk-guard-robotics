@@ -163,6 +163,7 @@ class FrameStreamer:
         self.bound_model = None
         self._n = 0
         self.last_camera = None
+        self._vopt = None
 
     def bind(self, model):
         if self.bound_model is model:
@@ -195,17 +196,25 @@ class FrameStreamer:
         self.bind(env.model)
         self._n += 1
         tel = env.get_telemetry()
+        sensors = env.sensor_readings() if hasattr(env, "sensor_readings") else {}
+        if self.last_camera is not None:
+            sensors["camera_clearance_mm"] = self.last_camera.get("camera_clearance_mm")
+            sensors["camera_confidence"] = self.last_camera.get("confidence")
         hud = {
             "phase": env.phase, "step": env.step_count,
             "displacement_mm": 1000.0 * tel["current_displacement_x"],
             "cable_force_n": tel["current_contact_force"],
             "peak_force_n": tel["contact_force"],
             "min_clearance_mm": 1000.0 * tel["lidar_clearance_m"],
+            "sensors": sensors,
         }
+        if self._vopt is None:
+            self._vopt = mujoco.MjvOption()
+            self._vopt.flags[mujoco.mjtVisFlag.mjVIS_RANGEFINDER] = 0   # hide the legacy single-ray rangefinder line
         for view, (w, h) in (("main", MAIN_SIZE), ("closeup", CLOSE_SIZE)):
             cam = env.make_camera(view)
             r = self.renderers[view]
-            r.update_scene(env.data, cam)
+            r.update_scene(env.data, cam, self._vopt)
             labels = []
             if view == "main":
                 for name, p in env.label_points().items():

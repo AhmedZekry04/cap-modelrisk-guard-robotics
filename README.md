@@ -84,6 +84,29 @@ See [docs/AUDIT_TRANSCEIVER.md](docs/AUDIT_TRANSCEIVER.md) for the line-by-line 
 * If no revision passes, the robot does not move; the last rejected candidate is shown only as a
   labelled sandbox replay.
 
+## The robot
+
+The arm is a **Universal Robots UR5e** with a **Robotiq 2F-85** gripper, both taken from
+[MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) (vendored under `sim/assets`
+with their BSD-3 licences), mounted on a mobile platform. The gripper hangs vertically and holds
+the tail of the transceiver from above.
+
+Sensors on the robot (all MuJoCo sensor elements, read from `sensordata`):
+
+| Sensor | Element | Shown as |
+|---|---|---|
+| wrist RGB-D camera | `wrist_cam` (RGB + metric depth) | cable detection overlay, camera clearance, confidence |
+| gripper touch sensor | `gripper_touch` (touch site around the palm) | touch N (live and peak) |
+| joint encoders | six UR5e joint positions | joint angles in degrees |
+| single-ray rangefinder | `clearance_lidar` | legacy, not used by the guard |
+| 2D LiDAR (navigation robot) | 36 rangefinders `lidar_0..35` | scan on the map, route validation |
+
+Simplification: the six arm joints are solved by damped-least-squares inverse kinematics every
+tick so the flange follows the gripper proxy, and the position servos are commanded to that
+solution; the arm shows the real robot's posture but does not carry the contact dynamics. The
+gripper linkage is held at a settled closed pose. A wrist force sensor is declared but reads zero
+under this kinematic drive, so it is not displayed.
+
 ## Navigation mission
 
 `sim/nav_env.py`: a known 12 x 10 m hall with six named racks, a dock, two routes to Rack A's

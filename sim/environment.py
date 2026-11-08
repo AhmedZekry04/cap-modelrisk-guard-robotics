@@ -1,26 +1,37 @@
 """
 sim/environment.py - Data-centre rack environment, robot HAL and sensors (MuJoCo)
 
-Scene
+Robot
 -----
-A server rack (decorative panels, ports, patch cables) with one target optical
-transceiver seated in a port at working height. A fibre trunk cable is routed
-across the rack front, behind the gripper, on a spring-mounted carrier so it
-deflects when struck. A mobile robot with a planar two-link arm and a vertical
-wrist stem holds the transceiver with a parallel gripper.
+A mobile platform carrying a Universal Robots UR5e arm with a Robotiq 2F-85 gripper. Both
+robot models come from MuJoCo Menagerie (sim/assets, BSD-3 licences included). The gripper
+hangs vertically and holds the tail of the target optical transceiver from above.
 
 Physics and visuals are separated on purpose:
-  * collision geometry: gripper palm, transceiver plug, fibre cable (and floor)
-  * everything else (rack, panels, arm links, fingers, patch cables) is visual only
+  * collision geometry: a box proxy for the closed gripper (hidden), the transceiver plug, the
+    fibre cable on its spring carrier, and the floor
+  * everything else (rack, panels, patch cables, the UR5e links, the 2F-85 meshes, the base) is
+    visual only
 
-Kinematic simplification (stated for the technical summary): the gripper palm is
-driven kinematically along the extraction axis (and a lift axis for the approach),
-exactly like the original HAL. The arm joints are solved analytically every step so
-the wrist stem sits on top of the palm; they do not carry dynamics. Contact forces
-between the palm/plug and the cable are real MuJoCo contacts.
+Kinematic simplification (stated for the technical summary): the gripper proxy is driven
+kinematically along the extraction axis (and a lift axis for the approach), exactly like the
+original HAL. The six UR5e joints are solved by damped-least-squares inverse kinematics every
+tick so the flange follows the gripper; their position servos are commanded to the same
+solution. The arm therefore shows the real robot's posture but does not carry the contact
+dynamics. Contact forces between the proxy/plug and the cable are real MuJoCo contacts.
+
+Sensors (all real MuJoCo sensor elements, read from data.sensordata)
+  * wrist_cam        RGB + metric depth camera on the back of the gripper (cable detection)
+  * gripper_touch    touch sensor around the gripper palm (normal contact force on the gripper)
+  * wrist_force      3-axis force sensor at the gripper mount (wrist F/T)
+  * clearance_lidar  single-ray rangefinder (legacy, kept for compatibility)
+  * joint encoders   the six UR5e joint positions
 """
+import copy
 import hashlib
 import math
+import os
+import tempfile
 import time
 
 import mujoco
@@ -34,24 +45,30 @@ import config
 Z_WORK = config.Z_WORK                      # working height of the target port
 X_FACE = config.RACK_FACE_X                 # x of the rack front face
 GRIPPER_OFFSET = 0.02                       # palm centre sits this far behind the plug centre
-PALM_HALF = (0.015, 0.025, 0.02)            # collision palm half sizes (unchanged from the original HAL)
+PALM_HALF = (0.015, 0.025, 0.02)            # collision proxy half sizes (unchanged from the original HAL)
 PLUG_HALF = (0.02, 0.015, 0.015)            # collision plug half sizes (unchanged)
 CABLE_RADIUS = 0.007
 CABLE_HALF_LEN = 0.33
-STEM_LEN = 0.18                             # vertical wrist stem from wrist joint to palm top
-SHOULDER = (-0.25, 0.0, 1.25)               # shoulder joint position
-L1, L2 = 0.40, 0.36                         # upper arm / forearm lengths
-FINGER_OPEN_Y, FINGER_CLOSED_Y = 0.026, 0.018
-APPROACH_LIFT = 0.15                        # gripper starts this high above the port and descends
+APPROACH_LIFT = 0.10                        # gripper starts this high above the port and descends
 WRIST_CAM_FOVY = 70.0
 WRIST_CAM_SIZE = (192, 144)                 # (width, height) of the wrist RGB-D render
 CABLE_HSV = dict(h_lo=10.0, h_hi=40.0, s_lo=0.45, v_lo=0.30)   # orange cable segmentation thresholds
 CAM_MIN_PIXELS = 60                         # fewer cable pixels than this = not detected
 CAM_MAX_DEPTH_SPREAD_M = 0.02               # wider p10..p90 depth spread than this = unreliable
 
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+ARM_MOUNT = (-0.15, 0.0, 0.62)              # UR5e base plate on top of the mobile platform
+UR_HOME = (-1.5708, -1.5708, 1.5708, -1.5708, -1.5708, 0.0)   # Menagerie "home" keyframe: elbow up, tool down
+UR_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
+UR_ACTUATORS = ("shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist_3")
+GRIP_MOUNT_Z = 0.1558                       # Robotiq 2F-85: base_mount frame -> pinch point along the tool axis
+GRIPPER_DRIVER_CLOSED = 0.78                # driver joint angle (rad) closing the 2F-85 pads on the 30 mm plug tail
+GRIPPER_JOINTS = ("right_driver_joint", "right_coupler_joint", "right_spring_link_joint", "right_follower_joint",
+                  "left_driver_joint", "left_coupler_joint", "left_spring_link_joint", "left_follower_joint")
+IK_DAMPING = 0.05
+
 TARGET_RGBA = "0.22 0.74 0.97 1"            # cyan  (#38bdf8)
 CABLE_RGBA = "0.98 0.57 0.24 1"             # orange (#fb923c)
-GRIPPER_RGBA = "0.95 0.35 0.30 1"           # red   (#f87171)
 
 CAMERAS = {
     # three-quarter view: arm, gripper, target port and cable together
@@ -94,24 +111,20 @@ def _rack_panels(y_center, with_switch, prefix):
     def panel(zc, h, k, is_switch=False):
         rgba = "0.14 0.15 0.19 1" if is_switch else shades[k % 2]
         g = [_box(f"{prefix}_panel{k}", (X_FACE + 0.008, y_center, zc), (0.008, 0.285, h / 2 - gap / 2), rgba)]
-        # handles / ears
         for sy in (-1, 1):
             g.append(_box(f"{prefix}_ear{k}{'l' if sy < 0 else 'r'}", (X_FACE - 0.003, y_center + sy * 0.275, zc),
                           (0.003, 0.006, h / 2 - 0.006), "0.55 0.56 0.58 1"))
-        # status LEDs
         g.append(_box(f"{prefix}_led{k}a", (X_FACE - 0.0015, y_center - 0.255, zc + 0.004), (0.0015, 0.003, 0.0015), "0.2 0.95 0.3 1"))
         g.append(_box(f"{prefix}_led{k}b", (X_FACE - 0.0015, y_center - 0.245, zc + 0.004), (0.0015, 0.003, 0.0015), "0.95 0.65 0.1 1"))
         return g
 
     if with_switch:
         out += panel(Z_WORK, 0.089, idx, is_switch=True); idx += 1
-        # below the switch
         z = switch_lo
         for h in heights:
             if z - h < 0.06:
                 break
             out += panel(z - h / 2, h, idx); idx += 1; z -= h
-        # above the switch
         z = switch_hi
         for h in heights:
             if z + h > 1.96:
@@ -128,9 +141,7 @@ def _rack_panels(y_center, with_switch, prefix):
 
 def _rack(y_center, prefix, with_switch):
     g = []
-    # cabinet body (recessed behind the panels)
     g.append(_box(f"{prefix}_cabinet", (X_FACE + 0.37, y_center, 1.0), (0.35, 0.30, 1.0), "0.10 0.11 0.13 1"))
-    # front posts and rails
     for sy in (-1, 1):
         g.append(_box(f"{prefix}_post{'l' if sy < 0 else 'r'}", (X_FACE + 0.006, y_center + sy * 0.300, 1.0), (0.012, 0.012, 1.0), "0.07 0.07 0.08 1"))
     g.append(_box(f"{prefix}_rail_top", (X_FACE + 0.006, y_center, 1.995), (0.012, 0.312, 0.012), "0.07 0.07 0.08 1"))
@@ -157,16 +168,12 @@ def _switch_ports():
             b = (X_FACE - 0.060, y * 1.9 + (0.08 if k > 0 else -0.08), Z_WORK - 0.32)
             g.append(_capsule(f"patch{k + 3}", a, b, 0.003, patch_colours[ci % len(patch_colours)]))
             ci += 1
-    # model strip on the switch face
     g.append(_box("switch_strip", (X_FACE - 0.0005, 0.0, Z_WORK + 0.036), (0.0005, 0.26, 0.004), "0.20 0.55 0.75 1"))
     return "\n".join(g)
 
 
 def _neighbour_racks():
-    g = []
-    for i, y in enumerate((-0.64, 0.64, -1.28, 1.28)):
-        g.append(_rack(y, f"nrack{i}", with_switch=False))
-    return "\n".join(g)
+    return "\n".join(_rack(y, f"nrack{i}", with_switch=False) for i, y in enumerate((-0.64, 0.64, -1.28, 1.28)))
 
 
 def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
@@ -191,6 +198,8 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
     <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.80 0.81 0.83" rgb2="0.70 0.71 0.74" width="256" height="256"/>
     <material name="floor_mat" texture="floor_tex" texrepeat="1.6667 1.6667" texuniform="true" reflectance="0.08"/>
     <material name="metal" specular="0.6" shininess="0.6"/>
+    <model name="ur5e" file="universal_robots_ur5e/ur5e.xml"/>
+    <model name="rq2f85" file="robotiq_2f85/2f85.xml"/>
   </asset>
   <worldbody>
     <light name="key" pos="-1.6 -1.2 2.6" dir="0.55 0.40 -0.73" diffuse="0.75 0.75 0.78" specular="0.25 0.25 0.25" castshadow="true"/>
@@ -229,54 +238,37 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
             friction="{cable_friction:.4f} 0.005 0.0001" solref="0.02 1"/>
     </body>
 
-    <!-- ================= robot (visual arm + kinematic gripper) ================= -->
-    <body name="robot_base" pos="-0.25 0 0">
-      <geom name="base_body" type="box" pos="0 0 0.20" size="0.26 0.22 0.14" rgba="0.15 0.16 0.19 1" {DECOR}/>
-      <geom name="base_skirt" type="box" pos="0 0 0.05" size="0.24 0.20 0.05" rgba="0.09 0.09 0.11 1" {DECOR}/>
-      <geom name="base_light" type="box" pos="0.26 0 0.30" size="0.004 0.12 0.006" rgba="0.2 0.9 0.5 1" {DECOR}/>
-      <geom name="wheel_fl" type="cylinder" pos="0.16 0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
-      <geom name="wheel_fr" type="cylinder" pos="0.16 -0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
-      <geom name="wheel_rl" type="cylinder" pos="-0.16 0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
-      <geom name="wheel_rr" type="cylinder" pos="-0.16 -0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
-      <geom name="column" type="cylinder" pos="0 0 0.795" size="0.06 0.455" rgba="0.86 0.87 0.89 1" material="metal" {DECOR}/>
-      <body name="shoulder" pos="0 0 1.25">
-        <joint name="arm_shoulder" type="hinge" axis="0 1 0" damping="50"/>
-        <geom name="shoulder_housing" type="cylinder" euler="90 0 0" size="0.062 0.05" rgba="0.22 0.23 0.26 1" {DECOR}/>
-        <geom name="upper_arm" type="capsule" fromto="0 0 0 {L1:.4f} 0 0" size="0.042" rgba="0.86 0.87 0.89 1" material="metal" {DECOR}/>
-        <body name="elbow" pos="{L1:.4f} 0 0">
-          <joint name="arm_elbow" type="hinge" axis="0 1 0" damping="50"/>
-          <geom name="elbow_housing" type="cylinder" euler="90 0 0" size="0.052 0.045" rgba="0.22 0.23 0.26 1" {DECOR}/>
-          <geom name="forearm" type="capsule" fromto="0 0 0 {L2:.4f} 0 0" size="0.036" rgba="0.86 0.87 0.89 1" material="metal" {DECOR}/>
-          <body name="wrist" pos="{L2:.4f} 0 0">
-            <joint name="arm_wrist" type="hinge" axis="0 1 0" damping="50"/>
-            <geom name="wrist_housing" type="cylinder" euler="90 0 0" size="0.045 0.04" rgba="0.22 0.23 0.26 1" {DECOR}/>
-            <geom name="wrist_stem" type="capsule" fromto="0 0 0 {STEM_LEN:.4f} 0 0" size="0.028" rgba="0.86 0.87 0.89 1" material="metal" {DECOR}/>
-            <site name="wrist_tip" pos="{STEM_LEN:.4f} 0 0" size="0.004" rgba="0 0 0 0"/>
-          </body>
-        </body>
-      </body>
+    <!-- ================= robot: mobile platform + UR5e + Robotiq 2F-85 (MuJoCo Menagerie) ================= -->
+    <body name="robot_base" pos="{ARM_MOUNT[0] - 0.10:.4f} 0 0">
+      <geom name="base_body" type="box" pos="0 0 0.33" size="0.30 0.24 0.28" rgba="0.15 0.16 0.19 1" {DECOR}/>
+      <geom name="base_skirt" type="box" pos="0 0 0.05" size="0.28 0.22 0.05" rgba="0.09 0.09 0.11 1" {DECOR}/>
+      <geom name="base_top" type="box" pos="0 0 0.615" size="0.30 0.24 0.006" rgba="0.80 0.81 0.83 1" {DECOR}/>
+      <geom name="base_light" type="box" pos="0.30 0 0.40" size="0.004 0.14 0.006" rgba="0.2 0.9 0.5 1" {DECOR}/>
+      <geom name="wheel_fl" type="cylinder" pos="0.18 0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+      <geom name="wheel_fr" type="cylinder" pos="0.18 -0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+      <geom name="wheel_rl" type="cylinder" pos="-0.18 0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+      <geom name="wheel_rr" type="cylinder" pos="-0.18 -0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+    </body>
+    <body name="arm_mount" pos="{ARM_MOUNT[0]:.4f} {ARM_MOUNT[1]:.4f} {ARM_MOUNT[2]:.4f}">
+      <attach model="ur5e" body="base" prefix="ur_"/>
     </body>
 
     <body name="gripper" pos="{gripper_x:.4f} 0 {Z_WORK:.4f}">
       <joint name="gripper_slide" type="slide" axis="1 0 0" range="-0.25 0.05" damping="30"/>
       <joint name="gripper_lift" type="slide" axis="0 0 1" range="-0.05 0.30" damping="30"/>
-      <!-- collision palm: identical dimensions to the original HAL proxy -->
-      <geom name="gripper_geom" type="box" size="{PALM_HALF[0]} {PALM_HALF[1]} {PALM_HALF[2]}" rgba="{GRIPPER_RGBA}"
+      <!-- collision proxy for the closed gripper: identical dimensions to the original HAL, hidden -->
+      <geom name="gripper_geom" type="box" size="{PALM_HALF[0]} {PALM_HALF[1]} {PALM_HALF[2]}" rgba="0.95 0.35 0.30 0"
             friction="0.4 0.005 0.0001"/>
-      <geom name="palm_plate" type="box" pos="0 0 0.024" size="0.020 0.030 0.004" rgba="0.22 0.23 0.26 1" {DECOR}/>
-      <geom name="palm_neck" type="cylinder" pos="0 0 0.034" size="0.024 0.008" rgba="0.22 0.23 0.26 1" {DECOR}/>
+      <site name="palm_touch" type="box" size="0.017 0.027 0.022" rgba="0 0 0 0"/>
+      <site name="wrist_ft" pos="0 0 {GRIP_MOUNT_Z:.4f}" size="0.004" rgba="0 0 0 0"/>
       <site name="palm_top" pos="0 0 0.02" size="0.004" rgba="0 0 0 0"/>
-      <body name="finger_l" pos="0.025 {FINGER_OPEN_Y:.4f} 0">
-        <joint name="finger_l" type="slide" axis="0 1 0" range="-0.03 0.03" damping="5"/>
-        <geom name="finger_l_geom" type="box" size="0.012 0.003 0.012" rgba="0.30 0.31 0.34 1" {DECOR}/>
-      </body>
-      <body name="finger_r" pos="0.025 {-FINGER_OPEN_Y:.4f} 0">
-        <joint name="finger_r" type="slide" axis="0 1 0" range="-0.03 0.03" damping="5"/>
-        <geom name="finger_r_geom" type="box" size="0.012 0.003 0.012" rgba="0.30 0.31 0.34 1" {DECOR}/>
-      </body>
+      <!-- tool axis down (180 deg about x) and a quarter turn so the pads straddle the plug across y -->
+      <frame pos="0 0 {GRIP_MOUNT_Z:.4f}" quat="0 0.7071068 -0.7071068 0">
+        <attach model="rq2f85" body="base_mount" prefix="g_"/>
+      </frame>
       <!-- rangefinder site kept for backward compatibility with the sensor block -->
       <site name="lidar_site" pos="-0.06 0.008 0.0" zaxis="0 1 0" size="0.003" rgba="0 0 0 0"/>
-      <!-- wrist RGB-D camera on the palm's rear face, looking back along -x toward the cable -->
+      <!-- wrist RGB-D camera on the proxy's rear face, looking back along -x toward the cable -->
       <camera name="wrist_cam" pos="-0.0165 0 0" xyaxes="0 1 0 0 0 1" fovy="{WRIST_CAM_FOVY}"/>
       <geom name="wrist_cam_housing" type="box" pos="-0.012 0 0" size="0.004 0.008 0.006" rgba="0.1 0.1 0.12 1" {DECOR}/>
       <!-- lens cover used to simulate an occluded camera (alpha 0 = hidden) -->
@@ -286,9 +278,61 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
 
   <sensor>
     <rangefinder name="clearance_lidar" site="lidar_site"/>
+    <touch name="gripper_touch" site="palm_touch"/>
+    <force name="wrist_force" site="wrist_ft"/>
   </sensor>
 </mujoco>
 """
+
+
+# --------------------------------------------------------------------------- #
+# compiled-model cache (the Menagerie meshes are large; compile once per process)
+# --------------------------------------------------------------------------- #
+_MODEL_CACHE = {}
+_GRIPPER_POSE_CACHE = {}
+
+
+def _base_model():
+    key = "base"
+    if key not in _MODEL_CACHE:
+        xml = build_mjcf(config.PLUG_INITIAL_X, cable_nominal_x(), config.WIRE_NOMINAL_Y, 0.4)
+        fd, path = tempfile.mkstemp(suffix=".xml", prefix="_scene_", dir=ASSETS_DIR)
+        os.close(fd)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(xml)
+            model = mujoco.MjModel.from_xml_path(path)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        # the attached robot models are visual only: strip their collision flags
+        for gid in range(model.ngeom):
+            bname = model.body(model.geom_bodyid[gid]).name
+            if bname.startswith("ur_") or bname.startswith("g_"):
+                model.geom_contype[gid] = 0
+                model.geom_conaffinity[gid] = 0
+        _MODEL_CACHE[key] = model
+    return _MODEL_CACHE[key]
+
+
+def _settled_gripper_pose(model, driver_angle, qadr, scratch_steps=200):
+    """Let the 2F-85 four-bar linkage settle with the driver joints pinned; returns the 8 joint values."""
+    key = round(float(driver_angle), 4)
+    if key in _GRIPPER_POSE_CACHE:
+        return _GRIPPER_POSE_CACHE[key]
+    d = mujoco.MjData(model)
+    rd, ld = qadr[0], qadr[4]
+    for _ in range(scratch_steps):
+        d.qpos[rd] = driver_angle
+        d.qpos[ld] = driver_angle
+        d.qvel[:] = 0.0
+        mujoco.mj_step(model, d)
+    pose = np.array([d.qpos[a] for a in qadr])
+    pose[0] = pose[4] = driver_angle
+    _GRIPPER_POSE_CACHE[key] = pose
+    return pose
 
 
 class PolicyStepBudgetExceeded(RuntimeError):
@@ -332,23 +376,38 @@ class DataCenterRackEnv:
         self.initial_plug_x = config.PLUG_INITIAL_X
         self.gripper_offset = GRIPPER_OFFSET
 
-        xml = build_mjcf(self.initial_plug_x, self.cable_x, self.wire_y, self.wire_friction)
-        self.model = mujoco.MjModel.from_xml_string(xml)
+        self.model = copy.deepcopy(_base_model())
+        wire_body = self.model.body("wire").id
+        self.model.body_pos[wire_body] = [self.cable_x, self.wire_y, Z_WORK]
+        self.model.geom_friction[self.model.geom("wire_geom").id, 0] = self.wire_friction
         self.data = mujoco.MjData(self.model)
 
         self.wire_geom_id = self.model.geom("wire_geom").id
         self.plug_geom_id = self.model.geom("plug_geom").id
         self.gripper_geom_id = self.model.geom("gripper_geom").id
-        self._jid = {n: self.model.joint(n).id for n in
-                     ("plug_slide", "gripper_slide", "gripper_lift", "wire_flex_x", "wire_slide",
-                      "arm_shoulder", "arm_elbow", "arm_wrist", "finger_l", "finger_r")}
+        kin = ("plug_slide", "gripper_slide", "gripper_lift", "wire_flex_x", "wire_slide")
+        self._jid = {n: self.model.joint(n).id for n in kin}
         self._qadr = {n: self.model.jnt_qposadr[j] for n, j in self._jid.items()}
         self._vadr = {n: self.model.jnt_dofadr[j] for n, j in self._jid.items()}
+        # UR5e joints / actuators / flange site
+        self._ur_qadr = np.array([self.model.jnt_qposadr[self.model.joint("ur_" + n).id] for n in UR_JOINTS])
+        self._ur_dof = np.array([self.model.jnt_dofadr[self.model.joint("ur_" + n).id] for n in UR_JOINTS])
+        self._ur_act = np.array([self.model.actuator("ur_" + n).id for n in UR_ACTUATORS])
+        self._ur_range = np.array([self.model.jnt_range[self.model.joint("ur_" + n).id] for n in UR_JOINTS])
+        self._ur_site = self.model.site("ur_attachment_site").id
+        self._ft_site = self.model.site("wrist_ft").id
+        # Robotiq joints (frozen at settled poses), actuator held at 0
+        self._grip_qadr = [self.model.jnt_qposadr[self.model.joint("g_" + n).id] for n in GRIPPER_JOINTS]
+        self._grip_dof = [self.model.jnt_dofadr[self.model.joint("g_" + n).id] for n in GRIPPER_JOINTS]
+        self._grip_open = _settled_gripper_pose(self.model, 0.0, self._grip_qadr)
+        self._grip_closed = _settled_gripper_pose(self.model, GRIPPER_DRIVER_CLOSED, self._grip_qadr)
+        # sensors
+        self._sens = {n: self.model.sensor_adr[self.model.sensor(n).id] for n in ("gripper_touch", "wrist_force", "clearance_lidar")}
 
         # commanded kinematic state
         self.current_x = self.initial_plug_x
         self.lift = 0.0
-        self.finger_y = FINGER_OPEN_Y
+        self.grip_fraction = 0.0                 # 0 = pads open, 1 = closed on the plug tail
         self.is_gripped = False
         self.obstacle_shift_x = 0.0
 
@@ -361,6 +420,7 @@ class DataCenterRackEnv:
         self.first_contact_displacement = None
         self.phase = "idle"
         self.step_count = 0
+        self.ik_error_m = 0.0
 
         # live / dashboard hooks
         self.live = False                       # when True, sleep live_step_sleep per tick and call frame_hook
@@ -374,54 +434,73 @@ class DataCenterRackEnv:
         self._wrist_renderers = None
         self.camera_occluded = False
 
-        self._apply_kinematics()
+        self.data.qpos[self._ur_qadr] = UR_HOME
+        self._apply_kinematics(ik_iters=60)
         mujoco.mj_forward(self.model, self.data)
 
     # ------------------------------------------------------------------ #
     # kinematics
     # ------------------------------------------------------------------ #
-    def _ik_arm(self, wx, wz):
-        """Planar two-link IK (elbow up) for wrist joint target (wx, wz). Returns hinge angles in radians."""
-        sx, _, sz = SHOULDER
-        dx, dz = wx - sx, wz - sz
-        d = max(1e-6, math.hypot(dx, dz))
-        d = min(d, L1 + L2 - 1e-4)
-        cos_b = (d * d + L1 * L1 - L2 * L2) / (2 * d * L1)
-        beta = math.acos(max(-1.0, min(1.0, cos_b)))
-        phi1 = math.atan2(dz, dx) + beta
-        ex, ez = sx + L1 * math.cos(phi1), sz + L1 * math.sin(phi1)
-        phi2 = math.atan2(wz - ez, wx - ex)
-        q1 = -phi1
-        q2 = -(phi2 - phi1)
-        q3 = math.pi / 2 - (q1 + q2)        # wrist stem points straight down
-        return q1, q2, q3
-
     def _set(self, name, value):
         self.data.qpos[self._qadr[name]] = value
         self.data.qvel[self._vadr[name]] = 0.0
 
-    def _apply_kinematics(self):
-        """Write the commanded gripper pose, arm pose and finger state into qpos."""
+    def _flange_target(self):
+        """World pose the UR5e flange must reach: the Robotiq mount frame on the gripper proxy, tool axis down."""
         gx = self.current_x - self.gripper_offset
+        pos = np.array([gx, 0.0, Z_WORK + self.lift + GRIP_MOUNT_Z])
+        quat = np.array([0.0, 1.0, 0.0, 0.0])        # 180 deg about x: tool z points to world -z
+        return pos, quat
+
+    def _solve_arm_ik(self, iters=3):
+        """Damped least-squares IK on the six UR5e joints toward the flange target (position + orientation)."""
+        m, d = self.model, self.data
+        target_pos, target_quat = self._flange_target()
+        tmat = np.zeros(9)
+        mujoco.mju_quat2Mat(tmat, target_quat)
+        R_t = tmat.reshape(3, 3)
+        jacp, jacr = np.zeros((3, m.nv)), np.zeros((3, m.nv))
+        err6 = np.zeros(6)
+        for _ in range(iters):
+            mujoco.mj_kinematics(m, d)
+            mujoco.mj_comPos(m, d)
+            pos = d.site_xpos[self._ur_site]
+            R_c = d.site_xmat[self._ur_site].reshape(3, 3)
+            R_err = R_t @ R_c.T
+            q_err = np.zeros(4)
+            mujoco.mju_mat2Quat(q_err, R_err.reshape(-1))
+            rot_vec = np.zeros(3)
+            mujoco.mju_quat2Vel(rot_vec, q_err, 1.0)
+            err6[:3] = target_pos - pos
+            err6[3:] = rot_vec
+            mujoco.mj_jacSite(m, d, jacp, jacr, self._ur_site)
+            J = np.vstack([jacp[:, self._ur_dof], jacr[:, self._ur_dof]])
+            dq = J.T @ np.linalg.solve(J @ J.T + (IK_DAMPING ** 2) * np.eye(6), err6)
+            q = np.clip(d.qpos[self._ur_qadr] + dq, self._ur_range[:, 0], self._ur_range[:, 1])
+            d.qpos[self._ur_qadr] = q
+        self.ik_error_m = float(np.linalg.norm(err6[:3]))
+        d.qvel[self._ur_dof] = 0.0
+        d.ctrl[self._ur_act] = d.qpos[self._ur_qadr]
+
+    def _apply_kinematics(self, ik_iters=3):
+        """Write the commanded gripper pose, the frozen 2F-85 linkage, and the IK arm pose into qpos."""
         self._set("gripper_slide", self.current_x - self.initial_plug_x)
         self._set("gripper_lift", self.lift)
         if self.is_gripped:
             self._set("plug_slide", self.current_x - self.initial_plug_x)
-        wz = Z_WORK + self.lift + PALM_HALF[2] + STEM_LEN
-        q1, q2, q3 = self._ik_arm(gx, wz)
-        self._set("arm_shoulder", q1)
-        self._set("arm_elbow", q2)
-        self._set("arm_wrist", q3)
-        self._set("finger_l", self.finger_y - FINGER_OPEN_Y)
-        self._set("finger_r", -(self.finger_y - FINGER_OPEN_Y))
+        pose = self._grip_open + (self._grip_closed - self._grip_open) * self.grip_fraction
+        for a, v, val in zip(self._grip_qadr, self._grip_dof, pose):
+            self.data.qpos[a] = val
+            self.data.qvel[v] = 0.0
         if self.obstacle_shift_x != 0.0:
             self.data.qpos[self._qadr["wire_flex_x"]] = self.obstacle_shift_x
+        self._solve_arm_ik(ik_iters)
 
     # ------------------------------------------------------------------ #
     # sensors
     # ------------------------------------------------------------------ #
     def get_lidar_distance(self) -> float:
-        """Minimum clearance (m) between the gripper/plug and the fibre cable surface (negative = penetration)."""
+        """Minimum clearance (m) between the gripper proxy/plug and the fibre cable surface (negative = penetration)."""
         fromto = np.zeros(6)
         d_palm = mujoco.mj_geomDistance(self.model, self.data, self.gripper_geom_id, self.wire_geom_id,
                                         config.LIDAR_MAX_RANGE_M, fromto)
@@ -436,6 +515,28 @@ class DataCenterRackEnv:
     def read_force_sensor(self) -> float:
         """HAL API: current normal reaction force on the fibre cable (Newtons)."""
         return self._cable_force_now()
+
+    def read_touch(self) -> float:
+        """Gripper touch sensor (N): normal contact force on the gripper proxy, from the MuJoCo touch sensor."""
+        return float(self.data.sensordata[self._sens["gripper_touch"]])
+
+    def read_wrist_force(self) -> np.ndarray:
+        """Wrist force sensor (N, 3-axis in the sensor frame) at the gripper mount."""
+        a = self._sens["wrist_force"]
+        return self.data.sensordata[a:a + 3].copy()
+
+    def joint_angles_deg(self):
+        return [float(math.degrees(self.data.qpos[a])) for a in self._ur_qadr]
+
+    def sensor_readings(self) -> dict:
+        """Everything the dashboard shows as live sensor data (all from MuJoCo sensors / joint state)."""
+        return {
+            "touch_n": round(self.read_touch(), 2),
+            "touch_peak_n": round(float(getattr(self, "peak_touch", 0.0)), 2),
+            "joints_deg": [round(v, 1) for v in self.joint_angles_deg()],
+            "ik_error_mm": round(1000.0 * self.ik_error_m, 2),
+            "robot": "UR5e + Robotiq 2F-85 (MuJoCo Menagerie)",
+        }
 
     def _cable_force_now(self) -> float:
         total = 0.0
@@ -471,7 +572,7 @@ class DataCenterRackEnv:
         if primitive_name == "grip_plug":
             self.phase = "grip"
             for i in range(10):
-                self.finger_y = FINGER_OPEN_Y + (FINGER_CLOSED_Y - FINGER_OPEN_Y) * (i + 1) / 10
+                self.grip_fraction = (i + 1) / 10
                 self.step_sim(1)
             self.is_gripped = True
             self.step_sim(2)
@@ -558,6 +659,8 @@ class DataCenterRackEnv:
         c = self.get_lidar_distance()
         if c < self.min_clearance:
             self.min_clearance = c
+        t = self.read_touch()
+        self.peak_touch = max(getattr(self, "peak_touch", 0.0), t)
         self._last_force = f
         self._last_clearance = c
 
@@ -574,6 +677,7 @@ class DataCenterRackEnv:
             "current_contact_force": float(f),
             "wire_collision": bool(self.peak_contact_force > 0.0),
             "first_contact_displacement_x": self.first_contact_displacement,
+            "touch_n": self.read_touch(),
             "phase": self.phase,
             "step": self.step_count,
         }
@@ -652,12 +756,11 @@ class DataCenterRackEnv:
         return (0.5 + (xc / zc) / (2 * tan_x), 0.5 - (yc / zc) / (2 * tan_y))
 
     def label_points(self) -> dict:
-        """World positions of the labelled objects."""
-        # anchors are spread out so the three labels do not pile up at the contact point
+        """World positions of the labelled objects (anchors spread out so the labels do not pile up)."""
         return {
             "Target transceiver": self.data.geom_xpos[self.plug_geom_id].copy() + np.array([0.03, 0.0, -0.06]),
             "Neighbouring fibre cable": self.data.geom_xpos[self.wire_geom_id].copy() + np.array([0.0, -0.26, 0.0]),
-            "Gripper": self.data.geom_xpos[self.gripper_geom_id].copy() + np.array([0.0, 0.0, 0.17]),
+            "Gripper": self.data.geom_xpos[self.gripper_geom_id].copy() + np.array([0.0, 0.0, 0.20]),
         }
 
     # ------------------------------------------------------------------ #
@@ -682,12 +785,6 @@ class DataCenterRackEnv:
         """
         Detect the orange cable in the wrist camera's RGB frame and estimate its distance from the
         aligned metric depth buffer (same render pass, same camera, so RGB and depth are pixel-aligned).
-
-        Returns:
-          detected, pixel_count, bbox [x0,y0,x1,y1], camera_clearance_m (median depth over cable
-          pixels, i.e. distance from the camera plane on the palm's rear face to the cable surface),
-          depth_spread_m (p90-p10), confidence: "confident" | "uncertain" | "none", reason,
-          sim_clearance_m (geometry, for comparison), rgb / mask arrays when with_image.
         """
         rgb_r, dep_r = self._wrist()
         rgb_r.update_scene(self.data, camera="wrist_cam")
@@ -697,7 +794,6 @@ class DataCenterRackEnv:
         h, s, v = rgb_to_hsv(rgb)
         c = CABLE_HSV
         mask = (h >= c["h_lo"]) & (h <= c["h_hi"]) & (s >= c["s_lo"]) & (v >= c["v_lo"]) & np.isfinite(depth)
-        # keep only the dense band: drop sparse rows (speckle on the floor / panel edges)
         rows = mask.sum(axis=1)
         if rows.max() > 0:
             mask &= (rows >= 0.2 * rows.max())[:, None]
