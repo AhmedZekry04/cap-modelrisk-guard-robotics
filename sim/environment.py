@@ -55,7 +55,7 @@ GRIPPER_RGBA = "0.95 0.35 0.30 1"           # red   (#f87171)
 
 CAMERAS = {
     # three-quarter view: arm, gripper, target port and cable together
-    "main": dict(lookat=(0.17, 0.0, 0.98), distance=1.02, azimuth=58.0, elevation=-16.0),
+    "main": dict(lookat=(0.21, 0.0, 0.96), distance=0.84, azimuth=58.0, elevation=-15.0),
     # contact close-up: gap between the gripper rear and the cable
     "closeup": dict(lookat=(0.27, 0.0, 0.90), distance=0.30, azimuth=98.0, elevation=-35.0),
 }
@@ -655,9 +655,9 @@ class DataCenterRackEnv:
         """World positions of the labelled objects."""
         # anchors are spread out so the three labels do not pile up at the contact point
         return {
-            "Target transceiver": self.data.geom_xpos[self.plug_geom_id].copy() + np.array([0.0, 0.0, -0.05]),
-            "Neighbouring fibre cable": self.data.geom_xpos[self.wire_geom_id].copy() + np.array([0.0, -0.19, 0.0]),
-            "Gripper": self.data.geom_xpos[self.gripper_geom_id].copy() + np.array([0.0, 0.0, 0.10]),
+            "Target transceiver": self.data.geom_xpos[self.plug_geom_id].copy() + np.array([0.03, 0.0, -0.06]),
+            "Neighbouring fibre cable": self.data.geom_xpos[self.wire_geom_id].copy() + np.array([0.0, -0.26, 0.0]),
+            "Gripper": self.data.geom_xpos[self.gripper_geom_id].copy() + np.array([0.0, 0.0, 0.17]),
         }
 
     # ------------------------------------------------------------------ #

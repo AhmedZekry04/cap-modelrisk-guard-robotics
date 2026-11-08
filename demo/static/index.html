@@ -161,6 +161,8 @@ textarea#task:focus { outline: 1px solid var(--cyan); border-color: var(--cyan);
 .sideimg img:not([src]) { visibility: hidden; }
 .sideimg .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 0.85em; text-align: center; padding: 0.5em; }
 .sideimg.has-frame .ph { display: none; }
+.sideimg img.thumb { position: absolute; left: auto; top: auto; right: 4px; bottom: 4px; width: 36%; height: auto; border: 1px solid var(--border); border-radius: 4px; background: #000; box-shadow: 0 2px 8px rgba(0,0,0,0.6); }
+.sideimg img.thumb:not([src]) { visibility: hidden; }
 .sidestats { display: flex; flex-direction: column; gap: 0.3em; min-width: 0; min-height: 0; overflow: hidden; }
 .stat2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5em; }
 .stat .k { color: var(--muted); font-size: 0.76em; line-height: 1.15; min-height: 2.3em; display: flex; align-items: flex-end; }
@@ -352,9 +354,9 @@ details.tech > summary:hover { color: var(--text); }
     </div>
     <div class="strip">
       <div class="panel">
-        <header><span class="ttl" id="sideTitle">Wrist camera · RGB-D</span><span class="right-slot" id="sideMeta"></span></header>
+        <header><span class="ttl" id="sideTitle">Contact close-up · wrist RGB-D inset</span><span class="right-slot" id="sideMeta"></span></header>
         <div class="sidebody">
-          <div class="sideimg" id="sideImgWrap"><img id="sideImg" alt=""><div class="ph" id="sidePh">no camera frame yet</div></div>
+          <div class="sideimg" id="sideImgWrap"><img id="sideImg" alt=""><img id="wristThumb" class="thumb" alt="" title="Wrist RGB-D camera: cable detection overlay"><div class="ph" id="sidePh">no camera frame yet</div></div>
           <div class="sidestats" id="sideStats"></div>
         </div>
       </div>
@@ -527,8 +529,8 @@ $('task').addEventListener('input', function () { UI.taskEdited = true; autosize
 function applyView() {
   var v = mainView();
   $('mainview').dataset.view = v;
-  $('sideTitle').textContent = v === 'map' ? 'Follow camera · MuJoCo' : 'Wrist camera · RGB-D';
-  $('sidePh').textContent = v === 'map' ? 'no camera frame yet' : 'no wrist-camera frame yet';
+  $('sideTitle').textContent = v === 'map' ? 'Follow camera · MuJoCo' : 'Contact close-up · wrist RGB-D inset';
+  $('sidePh').textContent = v === 'map' ? 'no camera frame yet' : 'no close-up frame yet';
   $('chartTitle').textContent = v === 'map' ? 'LiDAR min & distance to target' : 'Cable force & simulator clearance';
   $('floorSection').hidden = v === 'map';
   $('techMeta').textContent = v === 'map' ? 'guard checks · rollout · fairness · timeline' : 'guard checks · ensemble · fairness · timeline · floor plan';
@@ -814,7 +816,10 @@ $('mainImg').addEventListener('load', function () { renderLabels(lastLabels); })
 
 function renderFrame(fr) {
   if (!fr) return;
-  if (fr.view === 'closeup') return;                  /* v2 shows the wrist camera instead of the close-up */
+  if (fr.view === 'closeup') {                        /* contact close-up in the side panel (camera missions) */
+    if (!isNavMission() && fr.image) { $('sideImg').src = fr.image; $('sideImgWrap').classList.add('has-frame'); }
+    return;
+  }
   if (isNavMission()) {
     if (fr.image) { $('sideImg').src = fr.image; $('sideImgWrap').classList.add('has-frame'); }
     renderSideStats();
@@ -862,9 +867,11 @@ function renderSideStats() {
   if (c.source) $('sideMeta').title = c.source;
 }
 function renderSideImage() {
-  var img = $('sideImg'), wrap = $('sideImgWrap'), src = null;
-  if (isNavMission()) src = S.last_frame.main && S.last_frame.main.image; else src = S.camera && S.camera.image;
+  var img = $('sideImg'), wrap = $('sideImgWrap'), thumb = $('wristThumb'), src = null, tsrc = null;
+  if (isNavMission()) src = S.last_frame.main && S.last_frame.main.image;
+  else { src = S.last_frame.closeup && S.last_frame.closeup.image; tsrc = S.camera && S.camera.image; }
   if (src) { img.src = src; wrap.classList.add('has-frame'); } else { img.removeAttribute('src'); wrap.classList.remove('has-frame'); }
+  if (tsrc) thumb.src = tsrc; else thumb.removeAttribute('src');
 }
 
 /* ---------- navigation HUD + live map ---------- */
@@ -1234,7 +1241,7 @@ function handle(ev) {
       if (fr.view === 'closeup') S.last_frame.closeup = fr; else S.last_frame.main = fr;
       renderFrame(fr); break;
     }
-    case 'camera_frame': S.camera = ev; if (!isNavMission()) { if (ev.image) { $('sideImg').src = ev.image; $('sideImgWrap').classList.add('has-frame'); } renderSideStats(); } break;
+    case 'camera_frame': S.camera = ev; if (!isNavMission()) { if (ev.image) { $('wristThumb').src = ev.image; } renderSideStats(); } break;
     case 'guard': if (ev.stage === 'revised') S.guard_revised = ev; else S.guard_initial = ev; renderGuard(); break;
     case 'guard_message': S.guard_message = ev; renderGuardMessage(); break;
     case 'result': if (ev.run === 'guarded') { S.result_guarded = ev; renderResult('guarded'); } else { S.result_raw = ev; renderResult('raw'); } break;
