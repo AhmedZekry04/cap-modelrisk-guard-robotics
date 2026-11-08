@@ -28,7 +28,7 @@ try:
 except ImportError:
     HAS_VIEWER = False
 
-from sim.environment import DataCenterRackEnv
+from sim.environment import DataCenterRackEnv, CAMERAS
 from sim.risk_engine import EpistemicRiskEngine
 from agent.ast_guard import validate_code_ast
 from agent.llm_client import LocalCaPAgent
@@ -88,10 +88,10 @@ def run_scenario_a_unguarded(code_str: str):
     if HAS_VIEWER:
         try:
             with mujoco.viewer.launch_passive(sim.model, sim.data) as viewer:
-                viewer.cam.lookat[:] = [0.35, 0.0, 0.10]
-                viewer.cam.distance = 0.55
-                viewer.cam.elevation = -30.0
-                viewer.cam.azimuth = 125.0
+                viewer.cam.lookat[:] = CAMERAS["main"]["lookat"]
+                viewer.cam.distance = CAMERAS["main"]["distance"]
+                viewer.cam.elevation = CAMERAS["main"]["elevation"]
+                viewer.cam.azimuth = CAMERAS["main"]["azimuth"]
                 sim.viewer = viewer
                 if INTERACTIVE_MODE:
                     console.print("[bold yellow]>>> Viewer open! Position your window (press Tab in viewer to hide sidebars), then press ENTER here to execute Scenario A...[/bold yellow]")
@@ -189,10 +189,10 @@ def run_scenario_b_guarded_with_replan(code_str: str, agent: LocalCaPAgent, risk
         for s in range(35):
             live_sim.execute_primitive("pull_linear", distance=0.001, steps=1)
             
-            # Inject unscripted hazard at step 30 (once contacts disengage at 30.0mm)
-            if s == 30:
-                console.print("[bold red]⚠ UNSCRIPTED EVENT: Adjacent optical trunk shifts 15mm closer to trajectory![/bold red]")
-                live_sim.inject_unscripted_obstacle(y_displacement=-0.015)
+            # Inject unscripted hazard at step 20 (the cable carrier shifts toward the gripper)
+            if s == 20:
+                console.print(f"[bold red]⚠ UNSCRIPTED EVENT: Adjacent optical trunk shifts {1000 * config.UNSCRIPTED_CABLE_SHIFT_X:.0f} mm closer to the gripper![/bold red]")
+                live_sim.inject_unscripted_obstacle(config.UNSCRIPTED_CABLE_SHIFT_X)
 
             current_clearance = live_sim.get_lidar_distance()
             if current_clearance < config.LIDAR_MIN_CLEARANCE_M:
@@ -200,7 +200,7 @@ def run_scenario_b_guarded_with_replan(code_str: str, agent: LocalCaPAgent, risk
                     f"[bold red]REAL-TIME LIDAR INTERCEPTION TRIGGERED MID-SEQUENCE![/bold red]\n"
                     f"Active Rangefinder Distance: {current_clearance*1000:.1f} mm < {config.LIDAR_MIN_CLEARANCE_M*1000:.1f} mm threshold.\n"
                     f"Halting motion immediately to prevent fiber shearing.\n"
-                    f"Calling Local LLM to dynamically re-plan reseating maneuver...",
+                    f"Runtime reflex: re-planning the reseat from the measured displacement (no model call)...",
                     title="Active Perception Reflex", border_style="red"
                 ))
                 replan_triggered = True
@@ -222,10 +222,10 @@ def run_scenario_b_guarded_with_replan(code_str: str, agent: LocalCaPAgent, risk
     if HAS_VIEWER:
         try:
             with mujoco.viewer.launch_passive(live_sim.model, live_sim.data) as viewer:
-                viewer.cam.lookat[:] = [0.35, 0.0, 0.10]
-                viewer.cam.distance = 0.55
-                viewer.cam.elevation = -30.0
-                viewer.cam.azimuth = 125.0
+                viewer.cam.lookat[:] = CAMERAS["main"]["lookat"]
+                viewer.cam.distance = CAMERAS["main"]["distance"]
+                viewer.cam.elevation = CAMERAS["main"]["elevation"]
+                viewer.cam.azimuth = CAMERAS["main"]["azimuth"]
                 live_sim.viewer = viewer
                 if INTERACTIVE_MODE:
                     console.print("[bold yellow]>>> Viewer open! Press ENTER here to start Scenario B (Active LiDAR + Unscripted Event)...[/bold yellow]")
