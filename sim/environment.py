@@ -224,6 +224,7 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
     <!-- ================= transceiver plug (collision) ================= -->
     <body name="plug" pos="{plug_x:.4f} 0 {Z_WORK:.4f}">
       <joint name="plug_slide" type="slide" axis="1 0 0" range="-0.25 0.05" damping="30"/>
+      <joint name="plug_lift" type="slide" axis="0 0 1" range="-0.05 0.30" damping="30"/>
       <geom name="plug_geom" type="box" size="{PLUG_HALF[0]} {PLUG_HALF[1]} {PLUG_HALF[2]}" rgba="{TARGET_RGBA}"
             friction="0.3 0.005 0.0001" material="metal"/>
       <geom name="plug_tab" type="box" pos="-0.026 0 0.012" size="0.006 0.012 0.002" rgba="0.12 0.50 0.75 1" {DECOR}/>
@@ -385,7 +386,7 @@ class DataCenterRackEnv:
         self.wire_geom_id = self.model.geom("wire_geom").id
         self.plug_geom_id = self.model.geom("plug_geom").id
         self.gripper_geom_id = self.model.geom("gripper_geom").id
-        kin = ("plug_slide", "gripper_slide", "gripper_lift", "wire_flex_x", "wire_slide")
+        kin = ("plug_slide", "plug_lift", "gripper_slide", "gripper_lift", "wire_flex_x", "wire_slide")
         self._jid = {n: self.model.joint(n).id for n in kin}
         self._qadr = {n: self.model.jnt_qposadr[j] for n, j in self._jid.items()}
         self._vadr = {n: self.model.jnt_dofadr[j] for n, j in self._jid.items()}
@@ -488,6 +489,7 @@ class DataCenterRackEnv:
         self._set("gripper_lift", self.lift)
         if self.is_gripped:
             self._set("plug_slide", self.current_x - self.initial_plug_x)
+            self._set("plug_lift", self.lift)
         pose = self._grip_open + (self._grip_closed - self._grip_open) * self.grip_fraction
         for a, v, val in zip(self._grip_qadr, self._grip_dof, pose):
             self.data.qpos[a] = val
@@ -637,6 +639,20 @@ class DataCenterRackEnv:
             self._log_skill("execute_primitive", args, f"displacement {1000 * self._displacement_now():.1f} mm")
             return True
 
+        if primitive_name in ("lift_linear", "lower_linear"):
+            dist = float(kwargs.get("distance", 0.05))
+            steps = max(1, int(kwargs.get("steps", 30)))
+            sign = 1.0 if primitive_name == "lift_linear" else -1.0
+            self.phase = "lift" if sign > 0 else "lower"
+            step_delta = dist / steps
+            for _ in range(steps):
+                self.lift = max(-0.02, min(0.28, self.lift + sign * step_delta))
+                self.step_sim(1)
+                self.trajectory_log.append(self.get_telemetry())
+            self.max_lift = max(getattr(self, "max_lift", 0.0), self.lift)
+            self._log_skill("execute_primitive", args, f"height {1000 * self.lift:.0f} mm above the port")
+            return True
+
         self._log_skill("execute_primitive", args, "unknown primitive")
         return False
 
@@ -730,8 +746,9 @@ class DataCenterRackEnv:
           * cable: contact (any non-zero normal force) and within the configured force limit
         """
         final = self._displacement_now()
+        height = float(self.data.qpos[self._qadr["plug_lift"]])
         disengaged = self.max_displacement_x >= config.PLUG_DISENGAGE_THRESHOLD_X
-        reseated = abs(final) <= 0.004
+        reseated = abs(final) <= 0.004 and abs(height) <= 0.004
         contact = self.peak_contact_force > 0.0
         return {
             "task_completed": bool(disengaged and reseated and not contact),
@@ -740,6 +757,8 @@ class DataCenterRackEnv:
             "cable_within_force_limit": bool(self.peak_contact_force < config.CRITICAL_FORCE_LIMIT_N),
             "disengaged": bool(disengaged),
             "reseated": bool(reseated),
+            "max_lift_mm": float(1000.0 * getattr(self, "max_lift", 0.0)),
+            "final_height_mm": float(1000.0 * height),
             "cable_contact": bool(contact),
             "peak_force_n": float(self.peak_contact_force),
             "min_clearance_mm": float(1000.0 * (self.min_clearance if self.min_clearance != float("inf") else self.get_lidar_distance())),

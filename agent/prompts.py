@@ -11,6 +11,8 @@ Available robot skill API (UR5e arm with a Robotiq 2F-85 gripper, wrist RGB-D ca
 - `robot.execute_primitive("grip_plug")`: Closes the gripper pads on the transceiver's pull tab.
 - `robot.execute_primitive("pull_linear", distance=float)`: Retracts the plug backward along the x-axis (metres).
 - `robot.execute_primitive("push_linear", distance=float)`: Advances the plug forward to reseat it (metres).
+- `robot.execute_primitive("lift_linear", distance=float)`: Raises the gripped plug straight up (metres) once it is clear of the socket, for inspection.
+- `robot.execute_primitive("lower_linear", distance=float)`: Lowers the plug back to port height before reseating.
 - `robot.open_gripper()`: Opens the gripper pads (releases the plug).
 - `robot.wait(seconds=float)`: Dwells for the specified duration.
 - `robot.read_distance_sensor()`: Clearance (metres) between the end-effector and the nearest cable.
@@ -38,7 +40,9 @@ def policy(robot):
     grip = robot.read_touch_sensor()
     robot.log(f"grip force {grip:.1f} N")
     robot.execute_primitive("pull_linear", distance=0.12)
+    robot.execute_primitive("lift_linear", distance=0.08)
     robot.wait(1.0)
+    robot.execute_primitive("lower_linear", distance=0.08)
     robot.execute_primitive("push_linear", distance=0.12)
     offset = robot.read_plug_displacement()
     robot.log(f"post-check: plug offset {offset * 1000:.1f} mm")
@@ -78,7 +82,7 @@ PHYSICAL CONSTRAINTS OF THIS RACK (derived from the measurements, all in metres)
 - ADMISSIBLE EXTRACTION STROKE, including a {margin_m:.3f} m safety margin on both limits: from {lo_m:.3f} m to {hi_m:.3f} m. The middle of that window is {mid_m:.3f} m.
 
 REPAIR DIRECTIVE:
-1. Keep the same procedure structure (sensor pre-checks, grip_plug, pull_linear, wait(1.0), push_linear by the same distance, post-check, open_gripper).
+1. Keep the same procedure structure (sensor pre-checks, grip_plug, pull_linear, lift_linear, wait(1.0), lower_linear, push_linear by the same distance as the pull, post-check, open_gripper).
 2. Set the pull and push `distance` (metres) to one value strictly inside the admissible window above, for example its middle value.
 3. Never use the contact distance itself ({contact_m:.3f} m) or anything larger. All distances are metres (0.037 means 37 mm).
 Provide the complete updated Python code inside ```python ``` blocks.

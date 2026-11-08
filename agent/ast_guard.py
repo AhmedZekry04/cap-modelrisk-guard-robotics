@@ -3,7 +3,7 @@ agent/ast_guard.py - Deterministic AST Security & Capability Gatekeeper
 """
 import ast
 
-ALLOWED_PRIMITIVES = {"grip_plug", "pull_linear", "push_linear"}
+ALLOWED_PRIMITIVES = {"grip_plug", "pull_linear", "push_linear", "lift_linear", "lower_linear"}
 ALLOWED_METHODS = {
     "execute_primitive",
     "wait",

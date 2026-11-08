@@ -703,8 +703,11 @@ class TransceiverRunner(BaseRunner):
         if not outcome["disengaged"]:
             return f"Stroke {outcome['max_displacement_mm']:.0f} mm never disengaged the contacts (needs >= {1000 * config.PLUG_DISENGAGE_THRESHOLD_X:.0f} mm)"
         if not outcome["reseated"]:
-            return f"Plug not reseated (final offset {outcome['final_displacement_mm']:.0f} mm)"
-        return f"Disengaged at {outcome['max_displacement_mm']:.0f} mm and reseated; min simulator clearance {outcome['min_clearance_mm']:.1f} mm"
+            return (f"Plug not reseated (final offset {outcome['final_displacement_mm']:.0f} mm, "
+                    f"height {outcome.get('final_height_mm', 0.0):.0f} mm)")
+        lift = outcome.get("max_lift_mm", 0.0) or 0.0
+        lifted = f", lifted {lift:.0f} mm for inspection" if lift > 5 else ""
+        return f"Disengaged at {outcome['max_displacement_mm']:.0f} mm{lifted} and reseated; min simulator clearance {outcome['min_clearance_mm']:.1f} mm"
 
     @staticmethod
     def result_event(run, label, status, outcome, note):
