@@ -8,9 +8,14 @@ a Robotiq 2F-85 gripper) and a browser dashboard served by the Python standard l
 
 One-page summary for judges: [docs/ModelRisk-Guard_one_page.pdf](docs/ModelRisk-Guard_one_page.pdf)
 
-Demo video, one take, screen recording of the dashboard: [docs/demo_video.mp4](docs/de
+Demo video, one take, screen recording of the dashboard: [docs/demo_video.mp4]
 
-mo_video.mp4)
+
+
+
+
+https://github.com/user-attachments/assets/03122db3-dfe1-41de-b062-4178c46a3e7d
+
 
 ---
 
