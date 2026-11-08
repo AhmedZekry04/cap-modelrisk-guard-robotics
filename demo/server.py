@@ -22,6 +22,11 @@ from agent.prompts import DEFAULT_DEMO_TASK
 from agent.nav_prompts import DEFAULT_NAV_TASK
 from demo.comparison import TransceiverRunner, Recorder, StubAgent, replay_recording, RECORD_PATH, NAIVE_CODE, SAFE_CODE
 from demo.nav_runner import NavRunner, NAV_STUB_INITIAL, NAV_STUB_REVISED
+from sim.nav_env import MAP as NAV_MAP
+
+NAV_BOUNDS = NAV_MAP["bounds"]
+NAV_PARKED = tuple(NAV_MAP["obstacle_parked"])
+NAV_AISLE = (NAV_MAP["obstacle"]["x"], NAV_MAP["obstacle"]["y"])
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 BUSY_PHASES = {"generating", "raw_run", "guard_check", "patching", "guard_recheck", "guarded_run", "sandbox_replay"}
@@ -69,6 +74,7 @@ class Hub:
         self.state = self.empty_state()
         self.cancel_event = threading.Event()
         self.disturb_event = threading.Event()
+        self.obstacle_xy = None                  # live cart position on the navigation map (None = parked)
 
     @staticmethod
     def empty_state(mission="transceiver", setup=None):
@@ -142,6 +148,9 @@ class Hub:
             s["skill_calls"].append(strip(ev))
         elif t == "map":
             s["map"] = strip(ev)
+        elif t == "obstacle":
+            if s.get("map"):
+                s["map"]["obstacle"] = dict(s["map"].get("obstacle") or {}, x=ev["x"], y=ev["y"])
         elif t == "nav":
             if not ev.get("predicted"):
                 s["nav"] = strip(ev)
@@ -269,6 +278,11 @@ class Handler(BaseHTTPRequestHandler):
             spec = next(x for x in MISSIONS if x["id"] == mission)
             task = (body.get("task") or spec["prompt"]).strip()
             setup = body.get("setup") or {}
+            if mission == "navigation":
+                if setup.get("obstacle"):
+                    HUB.obstacle_xy = NAV_AISLE
+                elif "obstacle" in setup and HUB.obstacle_xy == NAV_AISLE:
+                    HUB.obstacle_xy = None
             with HUB.lock:
                 HUB.state = HUB.empty_state(mission, {s["key"]: setup.get(s["key"], s["default"]) for s in spec["setup"]})
                 HUB.state["task"] = task
@@ -277,6 +291,19 @@ class Handler(BaseHTTPRequestHandler):
             HUB.publish({"type": "status", "phase": "generating", "message": "Queued"})
             JOBS.put(("run", {"mission": mission, "task": task, "setup": setup}))
             return self._json(202, {"ok": True})
+        if path == "/api/obstacle":
+            if body.get("park"):
+                HUB.obstacle_xy = None
+            else:
+                try:
+                    x, y = float(body.get("x")), float(body.get("y"))
+                except (TypeError, ValueError):
+                    return self._json(400, {"error": "x and y required"})
+                xmin, ymin, xmax, ymax = NAV_BOUNDS
+                HUB.obstacle_xy = (max(xmin + 0.5, min(xmax - 0.5, x)), max(ymin + 0.4, min(ymax - 0.4, y)))
+            ox, oy = HUB.obstacle_xy if HUB.obstacle_xy else NAV_PARKED
+            HUB.publish({"type": "obstacle", "x": round(ox, 3), "y": round(oy, 3), "parked": HUB.obstacle_xy is None})
+            return self._json(200, {"ok": True, "x": ox, "y": oy})
         if path == "/api/disturb":
             if HUB.state["phase"] != "guarded_run":
                 return self._json(409, {"error": "the unscripted change can only be triggered during the guarded live run", "phase": HUB.state["phase"]})
@@ -306,9 +333,12 @@ def make_runner(job, args, emit, cancel):
     if args.stub:
         agent = (StubAgent(NAIVE_CODE, [SAFE_CODE], delay=0.01) if mission == "transceiver"
                  else StubAgent(NAV_STUB_INITIAL, [NAV_STUB_REVISED], delay=0.01))
-    return cls(emit, agent=agent, seed=args.seed, render=True, live_step_sleep=args.step_sleep,
-               max_revisions=args.max_revisions, cancel_flag=cancel, setup=job.get("setup") or {},
-               disturb_flag=HUB.disturb_event.is_set)
+    kwargs = dict(agent=agent, seed=args.seed, render=True, live_step_sleep=args.step_sleep,
+                  max_revisions=args.max_revisions, cancel_flag=cancel, setup=job.get("setup") or {},
+                  disturb_flag=HUB.disturb_event.is_set)
+    if mission == "navigation":
+        kwargs["obstacle_getter"] = lambda: HUB.obstacle_xy
+    return cls(emit, **kwargs)
 
 
 def job_loop(args):

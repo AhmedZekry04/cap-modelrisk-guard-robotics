@@ -910,6 +910,32 @@ function noteBlocked(ev) {
   if (S.blocked.length > 50) S.blocked.shift();
 }
 var mapC = { canvas: $('map'), wrap: $('mapView') };
+/* ---------- live obstacle: drag/click anywhere on the map to move the maintenance cart ---------- */
+(function () {
+  var cv = mapC.canvas; if (!cv) return;
+  var dragging = false, lastSent = 0;
+  function toWorld(ev) {
+    var tf = mapC.tf; if (!tf) return null;
+    var r = cv.getBoundingClientRect();
+    var px = ev.clientX - r.left, py = ev.clientY - r.top;
+    return { x: tf.b[0] + (px - tf.ox) / tf.s, y: tf.b[3] - (py - tf.oy) / tf.s };
+  }
+  function applyLocal(p) {
+    if (S.map && S.map.obstacle) { S.map.obstacle.x = p.x; S.map.obstacle.y = p.y; }
+    if (S.nav && Array.isArray(S.nav.obstacle)) { S.nav.obstacle[0] = p.x; S.nav.obstacle[1] = p.y; }
+    try { drawMap(); } catch (e) {}
+  }
+  function send(p, final) {
+    var now = Date.now(); if (!final && now - lastSent < 80) return;
+    lastSent = now;
+    if (MOCK) return;
+    fetch('/api/obstacle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x: p.x, y: p.y }) }).catch(function () {});
+  }
+  cv.addEventListener('mousedown', function (ev) { if (typeof isNavMission === 'function' && !isNavMission()) return; var p = toWorld(ev); if (!p) return; dragging = true; cv.style.cursor = 'grabbing'; applyLocal(p); send(p, true); ev.preventDefault(); });
+  window.addEventListener('mousemove', function (ev) { if (!dragging) return; var p = toWorld(ev); if (!p) return; applyLocal(p); send(p, false); });
+  window.addEventListener('mouseup', function (ev) { if (!dragging) return; dragging = false; cv.style.cursor = 'grab'; var p = toWorld(ev); if (p) { applyLocal(p); send(p, true); } });
+  cv.style.cursor = 'grab'; cv.title = 'Drag anywhere on the map to move the maintenance cart (live, the robot re-plans on its LiDAR)';
+})();
 function drawMap() {
   var c = mapC.canvas, w = mapC.wrap.clientWidth, h = mapC.wrap.clientHeight;
   if (!w || !h) return;
@@ -930,6 +956,7 @@ function drawMap() {
   var pw = bw * s, ph = bh * s, ox = padL + Math.max(0, (w - padL - padR - hudW - pw) / 2), oy = padT + (h - padT - padB - ph) / 2;
   function X(x) { return ox + (x - b[0]) * s; }
   function Y(y) { return oy + (b[3] - y) * s; }
+  mapC.tf = { ox: ox, oy: oy, s: s, b: b };                       /* kept for mouse -> world conversion (cart dragging) */
   var muted = cssVar('--muted') || '#94a3b8', grid = cssVar('--grid') || '#1c2636', text2 = cssVar('--text-2') || '#cbd5e1', faint = cssVar('--faint') || '#64748b';
   var cyan = cssVar('--cyan') || '#38bdf8', amber = cssVar('--amber') || '#fbbf24', red = cssVar('--red') || '#f87171', green = cssVar('--green') || '#4ade80', bg = '#05080f';
   /* floor + 1 m grid (hairline, solid) */
@@ -985,14 +1012,18 @@ function drawMap() {
     ctx.fillText(String(r.id == null ? '' : r.id), x0 + ww / 2, y0 + hh / 2);
     ctx.font = f + 'px ' + FONT;
   });
-  /* obstacle */
+  /* obstacle: the live cart position from the latest nav event wins over the static map entry */
   var o = M && M.obstacle;
+  if (nav && Array.isArray(nav.obstacle) && nav.obstacle.length >= 2 && isNum(nav.obstacle[0]) && isNum(nav.obstacle[1])) {
+    o = { x: nav.obstacle[0], y: nav.obstacle[1], w: isNum(nav.obstacle[2]) ? nav.obstacle[2] : (o && o.w), h: isNum(nav.obstacle[3]) ? nav.obstacle[3] : (o && o.h), label: (o && o.label) || 'maintenance cart' };
+  }
   if (o && isNum(o.x) && isNum(o.y)) {
     var ow = (isNum(o.w) ? o.w : 0.6) * s, oh = (isNum(o.h) ? o.h : 0.6) * s, ox0 = X(o.x) - ow / 2, oy0 = Y(o.y) - oh / 2;
     ctx.fillStyle = 'rgba(251,191,36,0.3)'; ctx.fillRect(ox0, oy0, ow, oh);
     ctx.strokeStyle = amber; ctx.lineWidth = 1.5; ctx.strokeRect(ox0 + 0.5, oy0 + 0.5, ow - 1, oh - 1);
-    ctx.fillStyle = text2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(o.label || 'obstacle', ox0 + ow / 2, oy0 + oh + 3);
-  }
+    ctx.fillStyle = text2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText((o.label || 'obstacle') + ' · drag me', ox0 + ow / 2, oy0 + oh + 3);
+    mapC.obstaclePx = { x: ox0, y: oy0, w: ow, h: oh };
+  } else { mapC.obstaclePx = null; }
   /* start marker */
   if (M && Array.isArray(M.start) && isNum(M.start[0]) && isNum(M.start[1])) {
     ctx.strokeStyle = text2; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(M.start[0]), Y(M.start[1]), 5, 0, Math.PI * 2); ctx.stroke();
@@ -1261,6 +1292,11 @@ function handle(ev) {
     case 'fairness': S.fairness = ev; renderFairness(); break;
     case 'series': S.series.push({ t: ev.t, run: ev.run, cable_force_n: ev.cable_force_n, min_clearance_mm: ev.min_clearance_mm, displacement_mm: ev.displacement_mm, lidar_min_m: ev.lidar_min_m, speed_mps: ev.speed_mps, distance_to_target_m: ev.distance_to_target_m }); if (S.series.length > 4000) S.series.splice(0, S.series.length - 4000); scheduleChart(); break;
     case 'map': S.map = ev; S.trails = {}; S.blocked = []; S.nav = null; renderNavHud(null); setRunLabel(null); scheduleMap(); break;
+    case 'obstacle': {
+      if (S.map) S.map.obstacle = Object.assign({}, S.map.obstacle || { w: 0.8, h: 0.6, label: 'maintenance cart' }, { x: ev.x, y: ev.y });
+      if (S.nav && Array.isArray(S.nav.obstacle)) { S.nav.obstacle[0] = ev.x; S.nav.obstacle[1] = ev.y; }
+      scheduleMap(); break;
+    }
     case 'nav': {
       S.nav = ev;
       noteBlocked(ev);

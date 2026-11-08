@@ -79,9 +79,37 @@ def test_clear_aisle_original_procedure_passes():
     print("[PASSED] test_clear_aisle_original_procedure_passes")
 
 
+def test_cart_moved_in_during_guarded_drive_triggers_lidar_replan():
+    """The cart is pushed into the aisle while the guarded robot is already driving R1: LiDAR stops it,
+    the model re-plans from the current pose, the re-plan is verified from that pose, and the robot completes."""
+    ticks = {"n": 0}
+
+    def cart():
+        ticks["n"] += 1
+        return (1.5, 0.0) if ticks["n"] > 200 else None      # raw run (~160 ticks) finishes first; cart appears mid guarded R1
+    events = []
+    NavRunner(events.append, agent=StubAgent(NAV_STUB_INITIAL, [NAV_STUB_REVISED]), render=False,
+              setup={"obstacle": False}, obstacle_getter=cart).run("Go to Rack A and inspect it.")
+    by = lambda t: [e for e in events if e["type"] == t]  # noqa: E731
+    raw = [r for r in by("result") if r["run"] == "raw"][-1]
+    assert raw["status"] == "COMPLETED"                        # aisle was clear during the original run
+    assert [g["stage"] for g in by("guard")][0] == "initial" and by("guard")[0]["decision"] == "APPROVED"
+    assert any(m["verdict"] == "HELD" for m in by("guard_message"))
+    guarded = [r for r in by("result") if r["run"] == "guarded"][-1]
+    assert guarded["status"] == "COMPLETED" and guarded["inspected"] and guarded["replans"] >= 1 and guarded["route_id"] == "R2"
+    calls = [c for c in by("skill_call") if c["run"] == "guarded"]
+    assert [c["skill"] for c in calls][:2] == ["follow_route", "inspect_rack"] and "blocked" in calls[0]["result"]
+    assert calls[-2]["args"]["route_id"] == "R2" and calls[-1]["skill"] == "inspect_rack"
+    pid = by("policy_ids")[-1]
+    assert pid["executed_matches_approved"] is True and calls[-1]["policy_sha256"] == pid["approved_sha256"]
+    assert by("done")[-1]["outcome"] == "revised_passed"
+    print("[PASSED] test_cart_moved_in_during_guarded_drive_triggers_lidar_replan")
+
+
 if __name__ == "__main__":
     test_robot_reaches_rack_and_inspection_is_required()
     test_obstacle_changes_lidar_scan_and_route_verdict()
     test_blocked_route_rejected_and_revision_executes_with_matching_policy_id()
     test_clear_aisle_original_procedure_passes()
+    test_cart_moved_in_during_guarded_drive_triggers_lidar_replan()
     print("\n[SUCCESS] ALL NAVIGATION TESTS PASSED CLEANLY.")

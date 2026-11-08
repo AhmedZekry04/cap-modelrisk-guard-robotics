@@ -11,13 +11,21 @@ MuJoCo rangefinder sensors (ray casts against the scene geometry, including the 
 Pose reported to the dashboard is the simulator's ground-truth joint state; there is no
 localisation estimate.
 """
+import copy
 import math
+import os
+import tempfile
 import time
 
 import mujoco
 import numpy as np
 
 import config
+
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+UR_TUCKED = (0.0, -2.35, 2.45, -1.65, -1.5708, 0.0)   # UR5e folded on the platform while driving (visual only)
+UR_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
+UR_ACTUATORS = ("shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist_3")
 
 LIDAR_RAYS = 36
 LIDAR_RANGE_M = 8.0
@@ -63,14 +71,15 @@ def route_length(waypoints) -> float:
     return float(sum(math.dist(a, b) for a, b in zip(waypoints[:-1], waypoints[1:])))
 
 
-def map_payload(obstacle_in_aisle: bool) -> dict:
+def map_payload(obstacle_in_aisle: bool = False, obstacle_xy=None) -> dict:
     routes = {k: {"label": v["label"], "waypoints": v["waypoints"], "length_m": round(route_length(v["waypoints"]), 1)}
               for k, v in MAP["routes"].items()}
     ob = MAP["obstacle"]
+    ox, oy = obstacle_position(obstacle_in_aisle, obstacle_xy)
     return {
         "type": "map", "bounds": MAP["bounds"], "racks": MAP["racks"], "routes": routes,
         "start": MAP["start"], "target": MAP["target"], "target_point": MAP["service_points"][MAP["target"]],
-        "obstacle": ({"x": ob["x"], "y": ob["y"], "w": ob["w"], "h": ob["h"], "label": ob["label"]} if obstacle_in_aisle else None),
+        "obstacle": {"x": ox, "y": oy, "w": ob["w"], "h": ob["h"], "label": ob["label"], "draggable": True},
         "pose_source": MAP["pose_source"],
     }
 
@@ -89,7 +98,8 @@ def _rack_geoms(r):
             f'<geom name="{name}_led" type="box" pos="{r["x"] + hx - 0.08} {strip_y * 1.004} 1.9" size="0.02 0.004 0.01" rgba="0.2 0.95 0.3 1" {DECOR}/>')
 
 
-def build_nav_mjcf(obstacle_pos):
+def build_nav_mjcf(obstacle_pos=None):
+    obstacle_pos = obstacle_pos or tuple(MAP["obstacle_parked"])
     xmin, ymin, xmax, ymax = MAP["bounds"]
     racks = "\n".join(_rack_geoms(r) for r in MAP["racks"])
     sites = "\n".join(
@@ -113,6 +123,7 @@ def build_nav_mjcf(obstacle_pos):
   <asset>
     <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.80 0.81 0.83" rgb2="0.70 0.71 0.74" width="256" height="256"/>
     <material name="floor_mat" texture="floor_tex" texrepeat="1.6667 1.6667" texuniform="true" reflectance="0.05"/>
+    <model name="ur5e" file="universal_robots_ur5e/ur5e.xml"/>
   </asset>
   <worldbody>
     <light pos="0 0 6" dir="0 0 -1" diffuse="0.7 0.7 0.72" castshadow="true"/>
@@ -136,11 +147,19 @@ def build_nav_mjcf(obstacle_pos):
       <joint name="base_x" type="slide" axis="1 0 0"/>
       <joint name="base_y" type="slide" axis="0 1 0"/>
       <joint name="base_yaw" type="hinge" axis="0 0 1"/>
-      <geom name="base_box" type="box" pos="0 0 0.18" size="0.30 0.22 0.14" rgba="0.15 0.16 0.19 1" {DECOR}/>
-      <geom name="base_nose" type="box" pos="0.31 0 0.22" size="0.02 0.14 0.02" rgba="0.2 0.9 0.5 1" {DECOR}/>
-      <geom name="mast" type="cylinder" pos="-0.05 0 0.55" size="0.05 0.25" rgba="0.86 0.87 0.89 1" {DECOR}/>
+      <!-- same mobile platform as the rack mission; the LiDAR puck sits on its front edge -->
+      <geom name="base_box" type="box" pos="0 0 0.33" size="0.30 0.24 0.28" rgba="0.15 0.16 0.19 1" {DECOR}/>
+      <geom name="base_skirt" type="box" pos="0 0 0.05" size="0.28 0.22 0.05" rgba="0.09 0.09 0.11 1" {DECOR}/>
+      <geom name="base_top" type="box" pos="0 0 0.615" size="0.30 0.24 0.006" rgba="0.80 0.81 0.83 1" {DECOR}/>
+      <geom name="base_nose" type="box" pos="0.31 0 0.40" size="0.004 0.14 0.006" rgba="0.2 0.9 0.5 1" {DECOR}/>
+      <geom name="wheel_fl" type="cylinder" pos="0.18 0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+      <geom name="wheel_fr" type="cylinder" pos="0.18 -0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+      <geom name="wheel_rl" type="cylinder" pos="-0.18 0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
+      <geom name="wheel_rr" type="cylinder" pos="-0.18 -0.23 0.08" euler="90 0 0" size="0.08 0.025" rgba="0.08 0.08 0.09 1" {DECOR}/>
       <geom name="lidar_puck" type="cylinder" pos="0 0 {LIDAR_HEIGHT}" size="0.06 0.03" rgba="0.1 0.1 0.12 1" {DECOR}/>
-      <geom name="sensor_head" type="box" pos="-0.05 0 0.86" size="0.08 0.10 0.06" rgba="0.2 0.21 0.24 1" {DECOR}/>
+      <body name="arm_mount" pos="-0.05 0 0.62">
+        <attach model="ur5e" body="base" prefix="ur_"/>
+      </body>
       {sites}
     </body>
   </worldbody>
@@ -155,17 +174,55 @@ class NavHeld(RuntimeError):
     pass
 
 
+_NAV_MODEL = {}
+
+
+def _nav_base_model():
+    """Compile the hall once per process (the UR5e meshes are large); envs deep-copy it."""
+    if "base" not in _NAV_MODEL:
+        fd, path = tempfile.mkstemp(suffix=".xml", prefix="_hall_", dir=ASSETS_DIR)
+        os.close(fd)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(build_nav_mjcf(None))
+            model = mujoco.MjModel.from_xml_path(path)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        for gid in range(model.ngeom):
+            if model.body(model.geom_bodyid[gid]).name.startswith("ur_"):
+                model.geom_contype[gid] = 0
+                model.geom_conaffinity[gid] = 0
+        _NAV_MODEL["base"] = model
+    return _NAV_MODEL["base"]
+
+
+def obstacle_position(obstacle_in_aisle: bool = False, obstacle_xy=None):
+    """Resolve the cart position: an explicit (x, y), else the aisle default, else the parked corner."""
+    if obstacle_xy is not None:
+        return (float(obstacle_xy[0]), float(obstacle_xy[1]))
+    ob = MAP["obstacle"]
+    return (ob["x"], ob["y"]) if obstacle_in_aisle else tuple(MAP["obstacle_parked"])
+
+
 class DataCenterNavEnv:
     """Mobile robot HAL: follow_route / inspect_rack / read_lidar_min / wait."""
 
-    def __init__(self, obstacle_in_aisle: bool = False):
+    def __init__(self, obstacle_in_aisle: bool = False, obstacle_xy=None):
         self.obstacle_in_aisle = bool(obstacle_in_aisle)
-        ob = MAP["obstacle"]
-        self.obstacle_pos = (ob["x"], ob["y"]) if obstacle_in_aisle else tuple(MAP["obstacle_parked"])
-        self.model = mujoco.MjModel.from_xml_string(build_nav_mjcf(self.obstacle_pos))
+        self.parked = tuple(MAP["obstacle_parked"])
+        self.obstacle_pos = obstacle_position(obstacle_in_aisle, obstacle_xy)
+        self.model = copy.deepcopy(_nav_base_model())
         self.data = mujoco.MjData(self.model)
         self._q = {n: self.model.jnt_qposadr[self.model.joint(n).id] for n in ("base_x", "base_y", "base_yaw", "cart_x", "cart_y")}
         self._v = {n: self.model.jnt_dofadr[self.model.joint(n).id] for n in self._q}
+        self._ur_qadr = [self.model.jnt_qposadr[self.model.joint("ur_" + n).id] for n in UR_JOINTS]
+        self._ur_dof = [self.model.jnt_dofadr[self.model.joint("ur_" + n).id] for n in UR_JOINTS]
+        self._ur_act = [self.model.actuator("ur_" + n).id for n in UR_ACTUATORS]
+        self.obstacle_getter = None            # callable() -> (x, y) | None, polled every tick (live dragging)
+        self.obstacle_moves = 0
         self._lidar_adr = [self.model.sensor_adr[self.model.sensor(f"lidar_{k}").id] for k in range(LIDAR_RAYS)]
         self._angles = np.radians(np.arange(LIDAR_RAYS) * 360.0 / LIDAR_RAYS)
 
@@ -202,8 +259,28 @@ class DataCenterNavEnv:
         d.qpos[self._q["base_x"]], d.qpos[self._q["base_y"]], d.qpos[self._q["base_yaw"]] = self.x, self.y, self.yaw
         for n in ("base_x", "base_y", "base_yaw", "cart_x", "cart_y"):
             d.qvel[self._v[n]] = 0.0
-        d.qpos[self._q["cart_x"]] = 0.0
-        d.qpos[self._q["cart_y"]] = 0.0
+        d.qpos[self._q["cart_x"]] = self.obstacle_pos[0] - self.parked[0]
+        d.qpos[self._q["cart_y"]] = self.obstacle_pos[1] - self.parked[1]
+        for a, v, act, val in zip(self._ur_qadr, self._ur_dof, self._ur_act, UR_TUCKED):
+            d.qpos[a] = val
+            d.qvel[v] = 0.0
+            d.ctrl[act] = val
+
+    def set_obstacle(self, xy):
+        """Move the maintenance cart (None = park it in the corner). Takes effect on the next LiDAR scan."""
+        new = obstacle_position(False, xy) if xy is not None else self.parked
+        if new != self.obstacle_pos:
+            self.obstacle_pos = new
+            self.obstacle_moves += 1
+            self._write_pose()
+            mujoco.mj_forward(self.model, self.data)
+            self._scan = self._read_lidar()
+
+    def set_pose(self, x, y, yaw_deg):
+        self.x, self.y, self.yaw = float(x), float(y), math.radians(float(yaw_deg))
+        self._write_pose()
+        mujoco.mj_forward(self.model, self.data)
+        self._scan = self._read_lidar()
 
     def _read_lidar(self):
         r = np.array([self.data.sensordata[a] for a in self._lidar_adr], dtype=float)
@@ -218,6 +295,8 @@ class DataCenterNavEnv:
             raise RuntimeError(f"navigation exceeded {self.step_budget} control ticks")
         if phase:
             self.phase = phase
+        if self.obstacle_getter is not None:
+            self.set_obstacle(self.obstacle_getter())
         self._write_pose()
         mujoco.mj_step(self.model, self.data)
         self._scan = self._read_lidar()
@@ -272,6 +351,7 @@ class DataCenterNavEnv:
             "blocked": self.blocked, "blocked_at": self.blocked_at,
             "arrived": self.distance_to(tp) <= INSPECT_RADIUS_M, "inspected": self.inspected_target(),
             "distance_to_target_m": round(self.distance_to(tp), 2), "speed_mps": round(self.speed, 2), "phase": self.phase,
+            "obstacle": [round(self.obstacle_pos[0], 3), round(self.obstacle_pos[1], 3), MAP["obstacle"]["w"], MAP["obstacle"]["h"]],
         }
 
     # ------------------------------------------------------------------ #

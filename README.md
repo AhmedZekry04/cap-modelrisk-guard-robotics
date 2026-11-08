@@ -109,6 +109,16 @@ under this kinematic drive, so it is not displayed.
 
 ## Navigation mission
 
+**Interactive obstacle.** The maintenance cart on the map is live: drag it (or click) anywhere
+on the map at any time, including while the robot is driving. The cart moves in the simulation
+on the next control tick, the 36-ray LiDAR sees it, and if a return enters the stop envelope the
+robot stops. In the guarded run the local model is then asked to re-plan from the robot's
+current position with the LiDAR route-validation evidence; the re-plan is verified in a sandbox
+started from that same position and cart placement, then driven. This repeats (up to four
+times) as long as you keep moving the cart into the way. If no known route is clear from where
+the robot stands, it holds and the page says why. The original (unguarded) run simply stops when
+the LiDAR blocks it.
+
 `sim/nav_env.py`: a known 12 x 10 m hall with six named racks, a dock, two routes to Rack A's
 service point (R1 through the cold aisle, 7.6 m; R2 around the north corridor, 18 m) and a
 maintenance cart that can be moved into the aisle. The robot base is kinematic (x, y, yaw written
