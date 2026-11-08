@@ -103,7 +103,7 @@ textarea#task:focus { outline: 1px solid var(--cyan); border-color: var(--cyan);
   display: flex; align-items: center; gap: 0.6em; flex: none; padding: 0.35em 0.7em; border-bottom: 1px solid var(--border);
   font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; min-width: 0; white-space: nowrap;
 }
-.panel > header > span:first-child { flex: none; }
+.panel > header > .ttl { flex: none; }
 .panel > header .right-slot { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .panel > .body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5em 0.7em; }
 .panel > .body.tight { padding: 0; }
@@ -352,14 +352,14 @@ details.tech > summary:hover { color: var(--text); }
     </div>
     <div class="strip">
       <div class="panel">
-        <header id="sideTitle">Wrist camera · RGB-D<span class="right-slot" id="sideMeta"></span></header>
+        <header><span class="ttl" id="sideTitle">Wrist camera · RGB-D</span><span class="right-slot" id="sideMeta"></span></header>
         <div class="sidebody">
           <div class="sideimg" id="sideImgWrap"><img id="sideImg" alt=""><div class="ph" id="sidePh">no camera frame yet</div></div>
           <div class="sidestats" id="sideStats"></div>
         </div>
       </div>
       <div class="panel">
-        <header><span id="chartTitle">Cable force &amp; simulator clearance</span>
+        <header><span class="ttl" id="chartTitle">Cable force &amp; simulator clearance</span>
           <div class="chart-legend"><span><i style="background:var(--s-raw)"></i>original</span><span><i style="background:var(--s-guarded)"></i>guarded</span><span><i style="background:var(--s-replay)"></i>replay</span></div>
         </header>
         <div class="chartwrap" id="chartwrap"><canvas id="chart"></canvas><div class="tip" id="tip"></div></div>
@@ -527,7 +527,7 @@ $('task').addEventListener('input', function () { UI.taskEdited = true; autosize
 function applyView() {
   var v = mainView();
   $('mainview').dataset.view = v;
-  $('sideTitle').firstChild.textContent = v === 'map' ? 'Follow camera · MuJoCo' : 'Wrist camera · RGB-D';
+  $('sideTitle').textContent = v === 'map' ? 'Follow camera · MuJoCo' : 'Wrist camera · RGB-D';
   $('sidePh').textContent = v === 'map' ? 'no camera frame yet' : 'no wrist-camera frame yet';
   $('chartTitle').textContent = v === 'map' ? 'LiDAR min & distance to target' : 'Cable force & simulator clearance';
   $('floorSection').hidden = v === 'map';
@@ -885,7 +885,7 @@ function noteBlocked(ev) {
   var b = ev && ev.blocked_at;
   if (!Array.isArray(b) || !isNum(b[0]) || !isNum(b[1])) return;
   var x = Math.round(b[0] * 100) / 100, y = Math.round(b[1] * 100) / 100, pred = ev.predicted === true;
-  for (var i = 0; i < S.blocked.length; i++) { var m = S.blocked[i]; if (m.x === x && m.y === y) { if (!pred) m.predicted = false; return; } }
+  for (var i = 0; i < S.blocked.length; i++) { var m = S.blocked[i]; if (Math.hypot(m.x - x, m.y - y) < 0.5) { if (!pred) { m.predicted = false; m.x = x; m.y = y; } return; } }
   S.blocked.push({ x: x, y: y, run: ev.run, predicted: pred });
   if (S.blocked.length > 50) S.blocked.shift();
 }
