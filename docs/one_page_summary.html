@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ModelRisk-Guard one-page technical summary</title>
+<style>
+  @page { size: A4; margin: 10mm 11mm 9mm 11mm; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: Georgia, "Times New Roman", serif; font-size: 9.5pt; line-height: 1.25; color: #111; }
+  h1 { font-size: 15.5pt; line-height: 1.15; margin: 0 0 3pt 0; text-align: center; }
+  .sub { text-align: center; font-size: 9pt; color: #333; margin: 0 0 6pt 0; }
+  h2 { font-size: 10.5pt; margin: 5.5pt 0 2pt 0; border-bottom: 1px solid #c8c8c8; padding-bottom: 1pt; }
+  p { margin: 0 0 3pt 0; text-align: justify; }
+  ul { margin: 0 0 2pt 0; padding-left: 13pt; }
+  li { margin: 0 0 2pt 0; text-align: justify; }
+  table { border-collapse: collapse; width: 100%; font-family: "Segoe UI", Arial, sans-serif; font-size: 8.4pt; margin: 2pt 0 2.5pt 0; }
+  th, td { border-bottom: 1px solid #d8d8d8; padding: 2.5pt 5pt; vertical-align: top; text-align: left; }
+  th { background: #f3f5f8; font-weight: 600; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 8.6pt; }
+  .foot { font-size: 8pt; color: #555; margin-top: 4pt; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<h1>ModelRisk-Guard: Runtime Verification and Self-Repair for LLM-Written Robot Procedures in Data-Centre Halls</h1>
+<p class="sub">AgentVerse 2026, Robotics track &middot; Local LLM (Qwen2.5-Coder-7B via Ollama) + MuJoCo + browser dashboard &middot; no cloud dependency</p>
+
+<h2>1. Who needs it and why</h2>
+<p>Unplanned data-centre downtime is estimated at $9,000 to $23,750 per minute (industry surveys), and one stalled 800G transceiver can stop a synchronised training job across thousands of GPUs. Halls are remote, hot and RF-shielded, so operators are trialling robots for hardware servicing. A manipulator following an ungrounded motion can snag the optical trunk cable next to the port and cause the outage it was sent to prevent. Code-as-Policies (Liang et al., ICRA 2023) gives zero-training flexibility, but a 7B model writes physically ungrounded motions: in our rack it pulls a transceiver 120&nbsp;mm and sweeps into a fibre cable 45&nbsp;mm behind the gripper. Static checks cannot see this.</p>
+
+<h2>2. What we built</h2>
+<ul>
+<li><b>Robot and sensors.</b> A UR5e arm with a Robotiq 2F-85 gripper (MuJoCo Menagerie) on a mobile platform. Sensors are MuJoCo sensor elements, not simulator shortcuts: a wrist RGB-D camera (colour segmentation + aligned metric depth gives a &ldquo;camera clearance&rdquo; and a confidence state), a gripper touch sensor, joint encoders, and a 36-ray LiDAR on the platform. Geometry-derived numbers are labelled &ldquo;simulator clearance&rdquo; and shown separately.</li>
+<li><b>Guard before motion.</b> The model&rsquo;s procedure is frozen (sha-256 policy id) and executed in four perturbed sandboxes (cable position &plusmn;5&nbsp;mm, friction). Checks: peak cable force &lt;&nbsp;20&nbsp;N (a configured simulation threshold), zero contact, ensemble variance (Radic Webster et al., 2021) and task completion (disengaged &ge;&nbsp;30&nbsp;mm, lifted, reseated).</li>
+<li><b>Evidence-driven repair.</b> The measured evidence (first contact 44&nbsp;mm, peak 1.3&nbsp;kN, admissible stroke window) goes back to the model, which rewrites its 13-line procedure (sensor pre-checks, grip, pull 0.120&nbsp;&rarr;&nbsp;0.037&nbsp;m, 80&nbsp;mm inspection lift, reseat, post-check). The revision is re-verified; only then does the exact approved text run through the restricted skill API. Every executed skill call is logged with the policy id and the page proves executed&nbsp;=&nbsp;approved. If nothing passes, the robot holds and says why.</li>
+<li><b>Perception-driven correction mid-run.</b> During the live pull the camera clearance is checked every 5&nbsp;ms physics tick. An unscripted cable shift (button) drops it below 4&nbsp;mm: the robot holds, the model re-plans from the measured travel, the re-plan is verified from that held state, then resumes. An occluded camera holds motion before it starts.</li>
+<li><b>Navigation mission, same stack.</b> &ldquo;Go to Rack A and inspect it&rdquo;: the model writes <code>follow_route</code>/<code>inspect_rack</code>; the guard runs a sandbox rollout plus LiDAR validation of every route. The maintenance cart is draggable live on the map; when the LiDAR stops the robot it re-plans from its current pose (R1&nbsp;&rarr;&nbsp;R2), verified, up to four times.</li>
+<li><b>Judge-facing dashboard.</b> One main view, one code panel (original, revision diff, executed skills), one plain-English guard message, Original vs Guarded cards. Both paths start from an identical frozen policy and hashed simulator state; every number shown is derived from the run.</li>
+</ul>
+
+<h2>3. Architecture, placement and measured latency (one laptop)</h2>
+<table>
+<tr><th>Layer</th><th>Placement</th><th>Measured</th><th>Role</th></tr>
+<tr><td>Cognition</td><td>Qwen2.5-Coder-7B, Ollama, local, 4.7&nbsp;GB</td><td>4&ndash;10&nbsp;s per procedure, 5&ndash;9&nbsp;s per revision</td><td>writes and repairs <code>policy(robot)</code></td></tr>
+<tr><td>Static gate</td><td>Python AST whitelist</td><td>&lt;&nbsp;1&nbsp;ms</td><td>no imports; robot skills only</td></tr>
+<tr><td>Sandbox guard</td><td>4 headless MuJoCo instances, seeded</td><td>0.1&ndash;0.3&nbsp;s per verdict</td><td>perturbed physics, task checks, route validation</td></tr>
+<tr><td>Perception</td><td>wrist RGB-D 192&times;144, touch, encoders; 36-ray LiDAR</td><td>5&nbsp;ms per observation</td><td>camera clearance, contact, scan</td></tr>
+<tr><td>Execution</td><td>kinematic drive, real contacts at 200&nbsp;Hz</td><td>60&ndash;100&nbsp;s per full rendered comparison</td><td>approved code only, logged skill trace</td></tr>
+</table>
+
+<h2>4. Measured results (local model, today)</h2>
+<p>Original 120&nbsp;mm pull: contact at 48&nbsp;mm, peak 1,269&nbsp;N, FAILED in 4/4 sandboxes. Revision 37&nbsp;mm: 0&nbsp;N, minimum clearance 6.7&nbsp;mm in the sandboxes and 8.0&nbsp;mm live, camera 44.3&nbsp;mm vs geometry 45.0&nbsp;mm, COMPLETED with an 80&nbsp;mm lift. A 20&nbsp;mm pull is rejected by the task check alone (no contact, never disengaged). Occluded camera: HELD, no motion. Navigation with the cart dropped into the aisle mid-drive: LiDAR stop at (2.3,&nbsp;0.0) with 0.44&nbsp;m ahead, re-plan to R2 verified from that pose, Rack A reached and inspected after one re-plan. 26 automated tests across five suites pass.</p>
+
+<h2>5. Limitations and safety boundaries</h2>
+<p>The 20&nbsp;N limit is configured, not measured from hardware; contact forces prove the collision, they are not calibrated. The arm follows the gripper by inverse kinematics (no joint dynamics); the cable is a rigid capsule on a spring carrier; camera depth is the renderer&rsquo;s ideal depth; navigation pose is simulator ground truth and routes are fixed polylines (a re-plan picks another validated route). The system prompt carries a vendor 0.12&nbsp;m stroke prior that makes the failure reproducible, and the 7B model needs the measured admissible window to repair reliably. Fail-safe by construction: no code moves the robot until it has passed the sandbox, and a hold is always a valid outcome.</p>
+
+<div class="foot"><span>ModelRisk-Guard &middot; github.com/AhmedZekry04/cap-modelrisk-guard-robotics (branch demo-dashboard)</span><span>Launch: <code>python -m demo.server</code></span></div>
+</body>
+</html>
