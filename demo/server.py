@@ -35,7 +35,7 @@ MISSIONS = [
     {"id": "transceiver", "title": "Transceiver reseat", "prompt": DEFAULT_DEMO_TASK, "main_view": "camera",
      "setup": [{"key": "cable_shift_mm", "label": "Move cable toward the gripper (mm)", "type": "number", "default": 0, "min": 0, "max": 25, "step": 1},
                {"key": "camera_occluded", "label": "Occlude the wrist camera", "type": "bool", "default": False}]},
-    {"id": "navigation", "title": "Rack navigation", "prompt": DEFAULT_NAV_TASK, "main_view": "map",
+    {"id": "navigation", "title": "Rack navigation", "prompt": DEFAULT_NAV_TASK, "main_view": "camera",
      "setup": [{"key": "obstacle", "label": "Move the maintenance cart into the aisle", "type": "bool", "default": False}]},
 ]
 RUNNERS = {"transceiver": TransceiverRunner, "navigation": NavRunner}

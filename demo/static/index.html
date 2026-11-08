@@ -439,7 +439,7 @@ var DEFAULT_MISSIONS = [
     prompt: 'Disengage the target optical transceiver in slot 1 without touching the neighbouring fibre cable, then reseat it.',
     setup: [{ key: 'cable_shift_mm', label: 'Move cable toward the gripper (mm)', type: 'number', 'default': 0, min: 0, max: 25, step: 1 },
             { key: 'camera_occluded', label: 'Occlude the wrist camera', type: 'bool', 'default': false }] },
-  { id: 'navigation', title: 'Rack navigation', main_view: 'map',
+  { id: 'navigation', title: 'Rack navigation', main_view: 'camera',
     prompt: 'Go to Rack A and inspect it.',
     setup: [{ key: 'obstacle', label: 'Move the maintenance cart into the aisle', type: 'bool', 'default': false }] }
 ];
@@ -473,7 +473,7 @@ function runClass(run) { return run === 'raw' || run === 'guarded' || run === 's
 function missionById(id) { for (var i = 0; i < MISSIONS.length; i++) if (MISSIONS[i] && MISSIONS[i].id === id) return MISSIONS[i]; return null; }
 function currentMission() { return missionById(UI.mission) || MISSIONS[0] || DEFAULT_MISSIONS[0]; }
 function mainView() { var m = currentMission(); return m && m.main_view === 'map' ? 'map' : 'camera'; }
-function isNavMission() { return mainView() === 'map'; }
+function isNavMission() { var m = currentMission(); return !!m && (m.id === 'navigation' || m.main_view === 'map'); }
 
 /* ---------- top bar: mission switch, setup, task ---------- */
 function renderMissionSeg() {
@@ -529,13 +529,34 @@ function autosizeTask() { var ta = $('task'); ta.style.height = 'auto'; ta.style
 function setTaskText(text) { var ta = $('task'); if (document.activeElement === ta) return; ta.value = text || ''; autosizeTask(); }
 $('task').addEventListener('input', function () { UI.taskEdited = true; autosizeTask(); });
 function applyView() {
-  var v = mainView();
+  var v = mainView(), nav = isNavMission();
   $('mainview').dataset.view = v;
-  $('sideTitle').textContent = v === 'map' ? 'Follow camera · MuJoCo' : 'Contact close-up · wrist RGB-D inset';
-  $('sidePh').textContent = v === 'map' ? 'no camera frame yet' : 'no close-up frame yet';
-  $('chartTitle').textContent = v === 'map' ? 'LiDAR min & distance to target' : 'Cable force & simulator clearance';
-  $('floorSection').hidden = v === 'map';
-  $('techMeta').textContent = v === 'map' ? 'guard checks · rollout · fairness · timeline' : 'guard checks · ensemble · fairness · timeline · floor plan';
+  /* navigation: the 3D follow camera is the big view and the live map (draggable cart) sits in the side panel */
+  var mapView = $('mapView'), wrap = $('sideImgWrap'), mainview = $('mainview');
+  var legend = document.querySelector('#camView .overlay.legend'), left = document.querySelector('.left'), sidebody = document.querySelector('.sidebody');
+  var sideMap = nav && v === 'camera';
+  try {
+    if (sideMap) {
+      if (mapView.parentNode !== wrap) wrap.appendChild(mapView);
+      mapView.style.display = 'block'; $('navHud').style.display = 'none'; wrap.classList.add('has-frame');
+      if (left) left.style.gridTemplateRows = 'minmax(0, 1fr) minmax(0, 40%)';
+      if (sidebody) sidebody.style.gridTemplateColumns = 'minmax(0, 1.7fr) minmax(0, 1fr)';
+      if (legend) legend.style.display = 'none';
+    } else {
+      if (mapView.parentNode !== mainview) mainview.insertBefore(mapView, $('runLabel'));
+      mapView.style.display = ''; $('navHud').style.display = '';
+      if (!nav && !($('sideImg').getAttribute('src'))) wrap.classList.remove('has-frame');
+      if (left) left.style.gridTemplateRows = '';
+      if (sidebody) sidebody.style.gridTemplateColumns = '';
+      if (legend) legend.style.display = '';
+    }
+  } catch (e) {}
+  $('sideTitle').textContent = sideMap ? 'Live map · drag the cart anywhere' : (v === 'map' ? 'Follow camera · MuJoCo' : 'Contact close-up · wrist RGB-D inset');
+  $('sidePh').textContent = sideMap ? 'the map appears when the run starts' : (v === 'map' ? 'no camera frame yet' : 'no close-up frame yet');
+  $('chartTitle').textContent = nav ? 'LiDAR min & distance to target' : 'Cable force & simulator clearance';
+  $('floorSection').hidden = nav;
+  $('techMeta').textContent = nav ? 'guard checks · rollout · fairness · timeline' : 'guard checks · ensemble · fairness · timeline · floor plan';
+  if (typeof scheduleMap === 'function') scheduleMap();
 }
 
 /* ---------- status pill / buttons ---------- */
@@ -788,9 +809,29 @@ function setNum(id, v, d, cls, unit) {
   var n = $(id); clear(n); n.appendChild(document.createTextNode(fmt(v, d)));
   n.appendChild(el('small', null, unit)); n.className = 'v' + (cls ? ' ' + cls : '');
 }
+function hudLabel(id, html) { var k = $(id).previousElementSibling; if (k && k.innerHTML !== html) k.innerHTML = html; }
 function renderHud(frame) {
   var h = (frame && frame.hud) || {};
   $('hudPhase').textContent = h.phase || '—';
+  if (isNum(h.speed_mps) || isNum(h.lidar_min_m)) {              /* navigation frame: relabel the HUD cells */
+    hudLabel('hudDisp', 'Speed'); setNum('hudDisp', h.speed_mps, 2, '', 'm/s');
+    hudLabel('hudForce', 'LiDAR min <small>· stop envelope 0.5 m</small>'); setNum('hudForce', h.lidar_min_m, 2, isNum(h.lidar_min_m) ? (h.lidar_min_m < 0.5 ? 'bad' : h.lidar_min_m < 1 ? 'warn' : 'ok') : '', 'm');
+    hudLabel('hudClear', 'Distance to target'); setNum('hudClear', h.distance_to_target_m, 1, isNum(h.distance_to_target_m) && h.distance_to_target_m < 0.6 ? 'ok' : '', 'm');
+    hudLabel('hudPeak', 'Route');
+    var n = S.nav || {}, rt = n.route_id ? String(n.route_id) : '—';
+    if (isNum(n.waypoint_index) && Array.isArray(n.route) && n.route.length) rt += ' · wp ' + n.waypoint_index + '/' + (n.route.length - 1);
+    $('hudPeak').innerHTML = ''; $('hudPeak').appendChild(document.createTextNode(rt)); $('hudPeak').className = 'v' + (n.blocked ? ' bad' : n.arrived ? ' ok' : '');
+    var sN = h.sensors;
+    if (sN && typeof sN === 'object') {
+      var parts = [];
+      if (isNum(sN.lidar_ahead_m)) parts.push('LiDAR ahead ' + sN.lidar_ahead_m.toFixed(2) + ' m');
+      if (isNum(sN.lidar_rays)) parts.push(sN.lidar_rays + ' rays');
+      if (sN.robot) parts.push(sN.robot);
+      $('hudSensors').textContent = parts.length ? parts.join(' · ') : '—';
+    }
+    return;
+  }
+  hudLabel('hudDisp', 'Displacement'); hudLabel('hudForce', 'Cable force <small>· limit 20 N (configured simulation threshold)</small>'); hudLabel('hudClear', 'Simulator clearance'); hudLabel('hudPeak', 'Peak force');
   setNum('hudDisp', h.displacement_mm, 1, '', 'mm');
   setNum('hudForce', h.cable_force_n, 1, isNum(h.cable_force_n) ? (h.cable_force_n > FORCE_LIMIT ? 'bad' : h.cable_force_n > 0.5 ? 'warn' : 'ok') : '', 'N');
   setNum('hudClear', h.min_clearance_mm, 1, isNum(h.min_clearance_mm) ? (h.min_clearance_mm < 0 ? 'bad' : h.min_clearance_mm < 5 ? 'warn' : 'ok') : '', 'mm');
@@ -833,13 +874,14 @@ function renderFrame(fr) {
     if (!isNavMission() && fr.image) { $('sideImg').src = fr.image; $('sideImgWrap').classList.add('has-frame'); }
     return;
   }
-  if (isNavMission()) {
+  if (isNavMission() && mainView() === 'map') {
     if (fr.image) { $('sideImg').src = fr.image; $('sideImgWrap').classList.add('has-frame'); }
     renderSideStats();
     if (!S.nav) setRunLabel(fr.run, false);
   } else {
     if (fr.image) { $('mainImg').src = fr.image; $('camView').classList.add('has-frame'); }
-    renderHud(fr); renderLabels(fr.labels); setRunLabel(fr.run, false);
+    renderHud(fr); renderLabels(fr.labels || []); setRunLabel(fr.run, false);
+    if (isNavMission()) renderSideStats();
   }
 }
 
@@ -991,7 +1033,7 @@ function drawMap() {
       if (!Array.isArray(p0) || !Array.isArray(p1) || !isNum(p0[0]) || !isNum(p0[1]) || !isNum(p1[0]) || !isNum(p1[1])) continue;
       var len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); if (len > bestLen) { bestLen = len; a0 = p0; a1 = p1; }
     }
-    if (a0) {
+    if (a0 && s >= 24) {
       var mx = X((a0[0] + a1[0]) / 2), my = Y((a0[1] + a1[1]) / 2);
       ctx.fillStyle = cur ? text2 : faint; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = (f * 0.95) + 'px ' + FONT;
       ctx.fillText(id + (r.label ? ' · ' + r.label : '') + (isNum(r.length_m) ? ' · ' + r.length_m.toFixed(1) + ' m' : ''), mx, my - Math.max(12, 0.3 * s));
@@ -1009,7 +1051,8 @@ function drawMap() {
     ctx.fillStyle = target ? 'rgba(56,189,248,0.26)' : '#1b2537'; ctx.fillRect(x0, y0, ww, hh);
     ctx.strokeStyle = target ? cyan : (cssVar('--border-2') || '#2b3648'); ctx.lineWidth = target ? 2 : 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, ww - 1, hh - 1);
     ctx.fillStyle = target ? '#e0f2fe' : text2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = (target ? 'bold ' : '') + f + 'px ' + FONT;
-    ctx.fillText(String(r.id == null ? '' : r.id), x0 + ww / 2, y0 + hh / 2);
+    var lab = String(r.id == null ? '' : r.id); if (ww < 46) lab = lab.replace(/^Rack\s+/i, '');   /* small map: "A" instead of "Rack A" */
+    if (ww >= 18) ctx.fillText(lab, x0 + ww / 2, y0 + hh / 2);
     ctx.font = f + 'px ' + FONT;
   });
   /* obstacle: the live cart position from the latest nav event wins over the static map entry */
@@ -1021,7 +1064,7 @@ function drawMap() {
     var ow = (isNum(o.w) ? o.w : 0.6) * s, oh = (isNum(o.h) ? o.h : 0.6) * s, ox0 = X(o.x) - ow / 2, oy0 = Y(o.y) - oh / 2;
     ctx.fillStyle = 'rgba(251,191,36,0.3)'; ctx.fillRect(ox0, oy0, ow, oh);
     ctx.strokeStyle = amber; ctx.lineWidth = 1.5; ctx.strokeRect(ox0 + 0.5, oy0 + 0.5, ow - 1, oh - 1);
-    ctx.fillStyle = text2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText((o.label || 'obstacle') + ' · drag me', ox0 + ow / 2, oy0 + oh + 3);
+    ctx.fillStyle = text2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(s >= 24 ? (o.label || 'obstacle') + ' · drag me' : 'cart · drag', ox0 + ow / 2, oy0 + oh + 3);
     mapC.obstaclePx = { x: ox0, y: oy0, w: ow, h: oh };
   } else { mapC.obstaclePx = null; }
   /* start marker */
@@ -1653,7 +1696,7 @@ function runMockNavigation(task, recorded) {
   at(0, { type: 'reset' });
   at(10, mockSnapshot('navigation', task, setup));
   if (recorded) at(20, { type: 'recorded', active: true, recorded_at: '2026-11-08T03:40:00Z', note: 'Recorded run' });
-  at(60, { type: 'mission', id: 'navigation', title: 'Rack navigation', prompt: DEFAULT_MISSIONS[1].prompt, setup: setup, main_view: 'map' });
+  at(60, { type: 'mission', id: 'navigation', title: 'Rack navigation', prompt: DEFAULT_MISSIONS[1].prompt, setup: setup, main_view: 'camera' });
   at(100, { type: 'task', text: task });
   at(150, { type: 'status', phase: 'generating', message: 'Asking qwen2.5-coder:7b for a procedure…' }); tl(150, 'info', 'Prompting local model (Ollama, qwen2.5-coder:7b)');
   var toks = tokens(NAV_ORIG);

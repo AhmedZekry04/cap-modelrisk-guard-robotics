@@ -21,7 +21,7 @@ from agent.nav_prompts import NAV_SYSTEM_PROMPT, NAV_TASK_PROMPT_TEMPLATE, NAV_R
 from demo.comparison import BaseRunner, compile_policy, encode_jpeg, diff_lines, diff_summary, sha256
 from sim.nav_env import DataCenterNavEnv, MAP, map_payload, route_length, obstacle_position, INSPECT_RADIUS_M
 
-NAV_FRAME_SIZE = (640, 360)
+NAV_FRAME_SIZE = (1280, 720)
 NAV_STUB_INITIAL = "def policy(robot):\n    robot.follow_route(\"R1\")\n    robot.inspect_rack(\"Rack A\")\n"
 NAV_STUB_REVISED = NAV_STUB_INITIAL.replace("R1", "R2")
 

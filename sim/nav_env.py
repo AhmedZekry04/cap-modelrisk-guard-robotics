@@ -269,6 +269,8 @@ class DataCenterNavEnv:
     def set_obstacle(self, xy):
         """Move the maintenance cart (None = park it in the corner). Takes effect on the next LiDAR scan."""
         new = obstacle_position(False, xy) if xy is not None else self.parked
+        if xy is not None and math.dist(new, (self.x, self.y)) < 0.9:
+            return                                   # a cart cannot be dropped onto the robot; keep the last position
         if new != self.obstacle_pos:
             self.obstacle_pos = new
             self.obstacle_moves += 1
@@ -465,10 +467,10 @@ class DataCenterNavEnv:
     def make_follow_camera(self):
         cam = mujoco.MjvCamera()
         cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        cam.lookat[:] = [self.x, self.y, 0.5]
-        cam.distance = 5.0
+        cam.lookat[:] = [self.x + 0.8 * math.cos(self.yaw), self.y + 0.8 * math.sin(self.yaw), 0.6]
+        cam.distance = 4.6
         cam.azimuth = math.degrees(self.yaw)
-        cam.elevation = -32.0
+        cam.elevation = -24.0
         return cam
 
     def close(self):
