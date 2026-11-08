@@ -35,19 +35,25 @@ FALLBACK_PATCH = (
 
 
 class LocalCaPAgent:
-    def __init__(self, allow_fallback: bool = True, timeout_s: float = None, model: str = None, endpoint: str = None):
+    def __init__(self, allow_fallback: bool = True, timeout_s: float = None, model: str = None, endpoint: str = None,
+                 system_prompt: str = None):
         self.model = model or config.OLLAMA_MODEL
         self.endpoint = endpoint or config.OLLAMA_ENDPOINT
         self.allow_fallback = allow_fallback
         self.timeout_s = float(timeout_s if timeout_s is not None else config.OLLAMA_TIMEOUT_S)
+        self.system_prompt = system_prompt or SYSTEM_PROMPT
         self.last_source = None   # "ollama:<model>" or "fallback"
+
+    def generate(self, prompt_text: str, on_token=None) -> str:
+        """Generic generation with this agent's system prompt; returns the extracted code block."""
+        return self.extract_code(self._query(prompt_text, on_token))
 
     # ------------------------------------------------------------------ #
     def _request(self, prompt_text: str, on_token=None) -> str:
         """Single Ollama generate call. Streams tokens to on_token when given."""
         payload = {
             "model": self.model,
-            "prompt": f"{SYSTEM_PROMPT}\n\n{prompt_text}",
+            "prompt": f"{self.system_prompt}\n\n{prompt_text}",
             "stream": bool(on_token),
             "keep_alive": "30m",
             "options": {"temperature": 0.0, "top_p": 0.1},

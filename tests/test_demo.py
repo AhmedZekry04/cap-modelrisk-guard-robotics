@@ -77,9 +77,59 @@ def test_fresh_policy_that_already_passes_is_reported_honestly():
     print("[PASSED] test_fresh_policy_that_already_passes_is_reported_honestly")
 
 
+def test_incomplete_and_violating_pulls_rejected_for_different_reasons():
+    from demo.comparison import SHORT_CODE
+    events, by = _run(StubAgent(SHORT_CODE, [NAIVE_CODE, NAIVE_CODE]))
+    g0 = [g for g in by("guard") if g["stage"] == "initial"][-1]
+    assert g0["decision"] == "REJECTED"
+    assert {c["name"] for c in g0["checks"] if not c["passed"]} == {"Task completion"}
+    g1 = [g for g in by("guard") if g["stage"] == "revised"][0]
+    assert g1["decision"] == "INTERCEPTED"
+    assert "Peak cable force" in {c["name"] for c in g1["checks"] if not c["passed"]}
+    msgs = by("guard_message")
+    assert "not completed" in msgs[0]["text"] and "hit the neighbouring fibre cable" in msgs[1]["text"]
+    raw = [r for r in by("result") if r["run"] == "raw"][-1]
+    assert raw["status"] == "FAILED" and raw["cable_contact"] is False and raw["disengaged"] is False
+    assert [r for r in by("result") if r["run"] == "guarded"][-1]["status"] == "WITHHELD"
+    print("[PASSED] test_incomplete_and_violating_pulls_rejected_for_different_reasons")
+
+
+def test_executed_skill_trace_matches_approved_policy():
+    events, by = _run(StubAgent(NAIVE_CODE, [SAFE_CODE]))
+    pid = by("policy_ids")[-1]
+    assert pid["original_sha256"] == sha256(NAIVE_CODE) and pid["approved_sha256"] == sha256(SAFE_CODE)
+    assert pid["executed_matches_approved"] is True
+    calls = [c for c in by("skill_call") if c["run"] == "guarded"]
+    assert [c["skill"] for c in calls] == ["execute_primitive", "execute_primitive", "wait", "execute_primitive"]
+    assert calls[1]["args"] == {"primitive": "pull_linear", "distance": 0.035}
+    assert all(c["policy_sha256"] == pid["approved_sha256"] for c in calls)
+    raw_calls = [c for c in by("skill_call") if c["run"] == "raw"]
+    assert raw_calls[1]["args"]["distance"] == 0.12 and raw_calls[0]["policy_sha256"] == sha256(NAIVE_CODE)
+    cam = by("camera_frame")
+    assert cam and cam[-1]["confidence"] == "confident" and abs(cam[-1]["camera_clearance_mm"] - cam[-1]["sim_clearance_mm"]) < 4
+    print("[PASSED] test_executed_skill_trace_matches_approved_policy")
+
+
+def test_occluded_camera_holds_guarded_motion():
+    events = []
+    ComparisonRunner(events.append, agent=StubAgent(NAIVE_CODE, [SAFE_CODE]), seed=config.DEMO_SEED, render=False,
+                     setup={"camera_occluded": True}).run("test task")
+    by = lambda t: [e for e in events if e["type"] == t]  # noqa: E731
+    guarded = [r for r in by("result") if r["run"] == "guarded"][-1]
+    assert guarded["status"] == "HELD"
+    assert by("guard_message")[-1]["verdict"] == "HELD" and "uncertain" in by("guard_message")[-1]["text"] or "none" in by("guard_message")[-1]["text"]
+    assert not [c for c in by("skill_call") if c["run"] == "guarded"]
+    assert by("camera_frame")[-1]["confidence"] in ("none", "uncertain")
+    assert by("done")[-1]["outcome"] == "held"
+    print("[PASSED] test_occluded_camera_holds_guarded_motion")
+
+
 if __name__ == "__main__":
     test_identical_policy_and_state_for_both_paths()
     test_unsafe_original_blocked_and_revision_completes_task()
     test_persistently_unsafe_candidate_is_withheld()
     test_fresh_policy_that_already_passes_is_reported_honestly()
+    test_incomplete_and_violating_pulls_rejected_for_different_reasons()
+    test_executed_skill_trace_matches_approved_policy()
+    test_occluded_camera_holds_guarded_motion()
     print("\n[SUCCESS] ALL DEMO COMPARISON TESTS PASSED CLEANLY.")

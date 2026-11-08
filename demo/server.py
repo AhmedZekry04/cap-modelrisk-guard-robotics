@@ -14,16 +14,26 @@ import os
 import queue
 import sys
 import threading
-import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import config
 from agent.prompts import DEFAULT_DEMO_TASK
-from demo.comparison import ComparisonRunner, Recorder, StubAgent, replay_recording, RECORD_PATH, NAIVE_CODE, SAFE_CODE
+from agent.nav_prompts import DEFAULT_NAV_TASK
+from demo.comparison import TransceiverRunner, Recorder, StubAgent, replay_recording, RECORD_PATH, NAIVE_CODE, SAFE_CODE
+from demo.nav_runner import NavRunner, NAV_STUB_INITIAL, NAV_STUB_REVISED
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 BUSY_PHASES = {"generating", "raw_run", "guard_check", "patching", "guard_recheck", "guarded_run", "sandbox_replay"}
+
+MISSIONS = [
+    {"id": "transceiver", "title": "Transceiver reseat", "prompt": DEFAULT_DEMO_TASK, "main_view": "camera",
+     "setup": [{"key": "cable_shift_mm", "label": "Move cable toward the gripper (mm)", "type": "number", "default": 0, "min": 0, "max": 25, "step": 1},
+               {"key": "camera_occluded", "label": "Occlude the wrist camera", "type": "bool", "default": False}]},
+    {"id": "navigation", "title": "Rack navigation", "prompt": DEFAULT_NAV_TASK, "main_view": "map",
+     "setup": [{"key": "obstacle", "label": "Move the maintenance cart into the aisle", "type": "bool", "default": False}]},
+]
+RUNNERS = {"transceiver": TransceiverRunner, "navigation": NavRunner}
 
 
 def _clean(obj):
@@ -60,13 +70,17 @@ class Hub:
         self.cancel_event = threading.Event()
 
     @staticmethod
-    def empty_state():
+    def empty_state(mission="transceiver", setup=None):
+        m = next(x for x in MISSIONS if x["id"] == mission)
         return {
-            "task": DEFAULT_DEMO_TASK, "phase": "idle", "status_message": "Ready",
+            "mission": mission, "setup": setup or {s["key"]: s["default"] for s in m["setup"]},
+            "task": m["prompt"], "phase": "idle", "status_message": "Ready",
             "original_code": "", "revised_code": "", "diff_lines": [], "diff_summary": "",
             "original_source": "", "revised_source": "",
-            "guard_initial": None, "guard_revised": None, "result_raw": None, "result_guarded": None,
-            "fairness": None, "timeline": [], "last_frame": {"main": None, "closeup": None},
+            "guard_initial": None, "guard_revised": None, "guard_message": None,
+            "result_raw": None, "result_guarded": None, "fairness": None, "policy_ids": None,
+            "skill_calls": [], "camera": None, "map": None, "nav": None,
+            "timeline": [], "last_frame": {"main": None, "closeup": None},
             "recorded": False, "recorded_at": None, "series": [],
             "llm": {"model": config.OLLAMA_MODEL, "endpoint": config.OLLAMA_ENDPOINT.rsplit("/api", 1)[0], "streaming": True},
             "done": None, "error": None,
@@ -77,7 +91,7 @@ class Hub:
             return {"type": "snapshot", **json.loads(dumps(self.state))}
 
     def subscribe(self):
-        q = queue.Queue(maxsize=2000)
+        q = queue.Queue(maxsize=4000)
         with self.lock:
             self.clients.append(q)
         return q
@@ -99,32 +113,45 @@ class Hub:
 
     def _apply(self, ev):
         s, t = self.state, ev.get("type")
+        strip = lambda e: {k: v for k, v in e.items() if k != "type"}  # noqa: E731
         if t == "status":
             s["phase"], s["status_message"] = ev["phase"], ev.get("message", "")
+        elif t == "mission":
+            s["mission"], s["setup"] = ev["id"], ev.get("setup", {})
         elif t == "task":
             s["task"] = ev["text"]
         elif t == "code_token":
-            key = "original_code" if ev["target"] == "original" else "revised_code"
-            s[key] += ev.get("token", "")
+            s["original_code" if ev["target"] == "original" else "revised_code"] += ev.get("token", "")
         elif t == "code":
             key = "original" if ev["target"] == "original" else "revised"
-            s[key + "_code"] = ev["code"]
-            s[key + "_source"] = ev.get("source", "")
+            s[key + "_code"], s[key + "_source"] = ev["code"], ev.get("source", "")
         elif t == "diff":
-            s["diff_lines"] = ev["lines"]
-            s["diff_summary"] = ev.get("summary", "")
+            s["diff_lines"], s["diff_summary"] = ev["lines"], ev.get("summary", "")
         elif t == "frame":
-            s["last_frame"][ev["view"]] = {k: v for k, v in ev.items() if k != "type"}
+            s["last_frame"][ev["view"]] = strip(ev)
+        elif t == "camera_frame":
+            s["camera"] = strip(ev)
         elif t == "guard":
-            s["guard_initial" if ev["stage"] == "initial" else "guard_revised"] = {k: v for k, v in ev.items() if k != "type"}
+            s["guard_initial" if ev["stage"] == "initial" else "guard_revised"] = strip(ev)
+        elif t == "guard_message":
+            s["guard_message"] = strip(ev)
+        elif t == "policy_ids":
+            s["policy_ids"] = strip(ev)
+        elif t == "skill_call":
+            s["skill_calls"].append(strip(ev))
+        elif t == "map":
+            s["map"] = strip(ev)
+        elif t == "nav":
+            if not ev.get("predicted"):
+                s["nav"] = strip(ev)
         elif t == "result":
-            s["result_raw" if ev["run"] == "raw" else "result_guarded"] = {k: v for k, v in ev.items() if k != "type"}
+            s["result_raw" if ev["run"] == "raw" else "result_guarded"] = strip(ev)
         elif t == "fairness":
-            s["fairness"] = {k: v for k, v in ev.items() if k != "type"}
+            s["fairness"] = strip(ev)
         elif t == "timeline":
-            s["timeline"].append({k: v for k, v in ev.items() if k != "type"})
+            s["timeline"].append(strip(ev))
         elif t == "series":
-            s["series"].append({k: v for k, v in ev.items() if k != "type"})
+            s["series"].append(strip(ev))
             if len(s["series"]) > 4000:
                 del s["series"][:1000]
         elif t == "error":
@@ -132,11 +159,12 @@ class Hub:
         elif t == "recorded":
             s["recorded"], s["recorded_at"] = bool(ev.get("active")), ev.get("recorded_at")
         elif t == "done":
-            s["done"] = {k: v for k, v in ev.items() if k != "type"}
+            s["done"] = strip(ev)
         elif t == "reset":
-            task = s.get("task") or DEFAULT_DEMO_TASK
-            self.state = self.empty_state()
-            self.state["task"] = task
+            mission, task, setup = s.get("mission", "transceiver"), s.get("task"), s.get("setup")
+            self.state = self.empty_state(mission, setup)
+            if task:
+                self.state["task"] = task
 
 
 HUB = Hub()
@@ -144,10 +172,11 @@ JOBS = queue.Queue()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ModelRiskGuard/1.0"
+    server_version = "ModelRiskGuard/2.0"
 
     def log_message(self, fmt, *args):  # quiet
-        if "/api/events" in (args[0] if args else "") or "/static" in (args[0] if args else ""):
+        line = args[0] if args else ""
+        if "/api/events" in line or "/static" in line or "/api/state" in line:
             return
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
@@ -197,6 +226,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(os.path.join(STATIC_DIR, name), ctype.get(name.rsplit(".", 1)[-1], "application/octet-stream"))
         if path == "/api/state":
             return self._json(200, HUB.snapshot())
+        if path == "/api/missions":
+            return self._json(200, MISSIONS)
         if path == "/api/events":
             return self._sse()
         self.send_error(404)
@@ -231,11 +262,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/run":
             if HUB.state["phase"] in BUSY_PHASES:
                 return self._json(409, {"error": "busy", "phase": HUB.state["phase"]})
-            task = (body.get("task") or DEFAULT_DEMO_TASK).strip()
+            mission = body.get("mission") or "transceiver"
+            if mission not in RUNNERS:
+                return self._json(400, {"error": f"unknown mission {mission}"})
+            spec = next(x for x in MISSIONS if x["id"] == mission)
+            task = (body.get("task") or spec["prompt"]).strip()
+            setup = body.get("setup") or {}
+            with HUB.lock:
+                HUB.state = HUB.empty_state(mission, {s["key"]: setup.get(s["key"], s["default"]) for s in spec["setup"]})
+                HUB.state["task"] = task
             HUB.publish({"type": "reset"})
             HUB.publish({"type": "task", "text": task})
             HUB.publish({"type": "status", "phase": "generating", "message": "Queued"})
-            JOBS.put(("run", task))
+            JOBS.put(("run", {"mission": mission, "task": task, "setup": setup}))
             return self._json(202, {"ok": True})
         if path == "/api/reset":
             HUB.cancel_event.set()
@@ -254,6 +293,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+def make_runner(job, args, emit, cancel):
+    mission = job["mission"]
+    cls = RUNNERS[mission]
+    agent = None
+    if args.stub:
+        agent = (StubAgent(NAIVE_CODE, [SAFE_CODE], delay=0.01) if mission == "transceiver"
+                 else StubAgent(NAV_STUB_INITIAL, [NAV_STUB_REVISED], delay=0.01))
+    return cls(emit, agent=agent, seed=args.seed, render=True, live_step_sleep=args.step_sleep,
+               max_revisions=args.max_revisions, cancel_flag=cancel, setup=job.get("setup") or {})
+
+
 def job_loop(args):
     """Runs on the main thread: one comparison (or replay) at a time."""
     while True:
@@ -267,7 +317,6 @@ def job_loop(args):
                 HUB.publish({"type": "error", "message": f"Replay failed: {ex}", "recoverable": True})
                 HUB.publish({"type": "status", "phase": "error", "message": "Replay failed"})
             continue
-        agent = StubAgent(NAIVE_CODE, [SAFE_CODE], delay=0.01) if args.stub else None
         recorder = Recorder() if args.record else None
 
         def emit(ev):
@@ -275,11 +324,11 @@ def job_loop(args):
             if recorder is not None:
                 recorder(ev)
 
-        runner = ComparisonRunner(emit, agent=agent, seed=args.seed, render=True,
-                                  live_step_sleep=args.step_sleep, max_revisions=args.max_revisions, cancel_flag=cancel)
-        runner.run(payload)
+        runner = make_runner(payload, args, emit, cancel)
+        runner.run(payload["task"])
         if recorder is not None and not cancel():
-            path = recorder.save(meta={"task": payload, "seed": args.seed, "model": runner.agent.model})
+            path = recorder.save(meta={"mission": payload["mission"], "task": payload["task"], "seed": args.seed,
+                                       "model": runner.agent.model, "setup": payload.get("setup")})
             HUB.publish({"type": "timeline", "t": round(runner.t(), 2), "level": "info", "text": f"Run recorded to {os.path.basename(path)}"})
 
 

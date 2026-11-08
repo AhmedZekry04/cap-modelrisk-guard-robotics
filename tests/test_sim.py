@@ -65,9 +65,47 @@ def test_risk_engine_approves_safe_pull():
     assert audit["peak_force_N"] == 0.0
     print(f"[PASSED] test_risk_engine_approves_safe_pull")
 
+def test_short_pull_fails_task_check_only():
+    """A 20 mm pull never touches the cable but never disengages the contacts: rejected by the task check alone."""
+    def short_policy(robot):
+        robot.execute_primitive("grip_plug")
+        robot.execute_primitive("pull_linear", distance=0.02, steps=30)
+        robot.wait(1.0)
+        robot.execute_primitive("push_linear", distance=0.02, steps=30)
+
+    engine = EpistemicRiskEngine(seed=7)
+    is_safe, omega, peak_force, audit = engine.evaluate_policy_risk(short_policy)
+    assert is_safe is True and peak_force == 0.0
+    assert audit["decision"] == "REJECTED"
+    failed = {c["name"] for c in audit["checks"] if not c["passed"]}
+    assert failed == {"Task completion"}, failed
+    env = DataCenterRackEnv(); env.approach(); short_policy(env); oc = env.outcome(); env.close()
+    assert oc["cable_ok"] is True and oc["disengaged"] is False and oc["reseated"] is True and oc["task_completed"] is False
+    print("[PASSED] test_short_pull_fails_task_check_only")
+
+
+def test_wrist_camera_detects_cable_and_tracks_shift():
+    """RGB colour detection + aligned depth gives a clearance that tracks the geometry and reacts to a cable shift."""
+    env = DataCenterRackEnv(); env.approach()
+    a = env.camera_observation(with_image=False)
+    assert a["detected"] and a["confidence"] == "confident", a
+    assert abs(a["camera_clearance_m"] - a["sim_clearance_m"]) < 0.004
+    env.inject_unscripted_obstacle(0.015)           # cable carrier moves 15 mm toward the gripper
+    b = env.camera_observation(with_image=False)
+    assert abs((a["camera_clearance_m"] - b["camera_clearance_m"]) - 0.015) < 0.004
+    assert b["pixel_count"] > a["pixel_count"]
+    env.set_camera_occluded(True)
+    c = env.camera_observation(with_image=False)
+    assert c["confidence"] in ("none", "uncertain"), c
+    env.close()
+    print("[PASSED] test_wrist_camera_detects_cable_and_tracks_shift")
+
+
 if __name__ == "__main__":
     test_lidar_sensor_clearance_reading()
     test_environment_hal_execution()
     test_risk_engine_intercepts_excessive_pull()
     test_risk_engine_approves_safe_pull()
+    test_short_pull_fails_task_check_only()
+    test_wrist_camera_detects_cable_and_tracks_shift()
     print("\n[SUCCESS] ALL DEVELOPER 1 PERCEPTION & SIMULATION TESTS PASSED CLEANLY.")

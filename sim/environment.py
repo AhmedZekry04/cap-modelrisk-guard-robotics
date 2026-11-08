@@ -43,6 +43,11 @@ SHOULDER = (-0.25, 0.0, 1.25)               # shoulder joint position
 L1, L2 = 0.40, 0.36                         # upper arm / forearm lengths
 FINGER_OPEN_Y, FINGER_CLOSED_Y = 0.026, 0.018
 APPROACH_LIFT = 0.15                        # gripper starts this high above the port and descends
+WRIST_CAM_FOVY = 70.0
+WRIST_CAM_SIZE = (192, 144)                 # (width, height) of the wrist RGB-D render
+CABLE_HSV = dict(h_lo=10.0, h_hi=40.0, s_lo=0.45, v_lo=0.30)   # orange cable segmentation thresholds
+CAM_MIN_PIXELS = 60                         # fewer cable pixels than this = not detected
+CAM_MAX_DEPTH_SPREAD_M = 0.02               # wider p10..p90 depth spread than this = unreliable
 
 TARGET_RGBA = "0.22 0.74 0.97 1"            # cyan  (#38bdf8)
 CABLE_RGBA = "0.98 0.57 0.24 1"             # orange (#fb923c)
@@ -174,11 +179,12 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
 <mujoco model="datacenter_rack">
   <compiler angle="degree"/>
   <option timestep="0.005" gravity="0 0 -9.81"/>
+  <statistic extent="3.0" center="0.3 0 1.0"/>
   <visual>
     <global offwidth="1280" offheight="720" fovy="45"/>
     <headlight ambient="0.30 0.30 0.32" diffuse="0.45 0.45 0.47" specular="0.15 0.15 0.15"/>
     <quality shadowsize="4096" offsamples="4"/>
-    <map znear="0.01" zfar="40"/>
+    <map znear="0.001" zfar="40"/>
     <rgba haze="0.06 0.07 0.09 1"/>
   </visual>
   <asset>
@@ -270,6 +276,11 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
       </body>
       <!-- rangefinder site kept for backward compatibility with the sensor block -->
       <site name="lidar_site" pos="-0.06 0.008 0.0" zaxis="0 1 0" size="0.003" rgba="0 0 0 0"/>
+      <!-- wrist RGB-D camera on the palm's rear face, looking back along -x toward the cable -->
+      <camera name="wrist_cam" pos="-0.0165 0 0" xyaxes="0 1 0 0 0 1" fovy="{WRIST_CAM_FOVY}"/>
+      <geom name="wrist_cam_housing" type="box" pos="-0.012 0 0" size="0.004 0.008 0.006" rgba="0.1 0.1 0.12 1" {DECOR}/>
+      <!-- lens cover used to simulate an occluded camera (alpha 0 = hidden) -->
+      <geom name="lens_cover" type="box" pos="-0.040 0 0" size="0.002 0.04 0.04" rgba="0.3 0.3 0.32 0" {DECOR}/>
     </body>
   </worldbody>
 
@@ -282,6 +293,29 @@ def build_mjcf(plug_x, cable_x, cable_y, cable_friction):
 
 class PolicyStepBudgetExceeded(RuntimeError):
     """Raised when a policy keeps the robot moving for longer than the step budget allows."""
+
+
+class MotionHeld(RuntimeError):
+    """Raised by a motion monitor to stop the robot (e.g. the camera lost the cable)."""
+
+
+def rgb_to_hsv(rgb: np.ndarray):
+    """Vectorised RGB (uint8, HxWx3) -> hue in degrees, saturation and value in [0, 1]."""
+    x = rgb.astype(np.float32) / 255.0
+    r, g, b = x[..., 0], x[..., 1], x[..., 2]
+    mx, mn = x.max(axis=-1), x.min(axis=-1)
+    d = mx - mn
+    nz = d > 1e-6
+    h = np.zeros_like(mx)
+    rm = (mx == r) & nz
+    gm = (mx == g) & nz & ~rm
+    bm = nz & ~rm & ~gm
+    dd = np.where(nz, d, 1.0)
+    h[rm] = (60.0 * ((g - b)[rm] / dd[rm])) % 360.0
+    h[gm] = 60.0 * ((b - r)[gm] / dd[gm]) + 120.0
+    h[bm] = 60.0 * ((r - g)[bm] / dd[bm]) + 240.0
+    s = np.where(mx > 1e-6, d / np.maximum(mx, 1e-6), 0.0)
+    return h, s, mx
 
 
 class DataCenterRackEnv:
@@ -335,6 +369,10 @@ class DataCenterRackEnv:
         self.frame_every = 1
         self.step_budget = config.POLICY_STEP_BUDGET
         self.cancel_flag = None                 # callable() -> bool, checked every tick
+        self.motion_monitor = None              # callable(env) each tick; may raise MotionHeld to stop the robot
+        self.skill_log = []                     # every HAL call executed: {seq, skill, args, step, result}
+        self._wrist_renderers = None
+        self.camera_occluded = False
 
         self._apply_kinematics()
         mujoco.mj_forward(self.model, self.data)
@@ -421,7 +459,15 @@ class DataCenterRackEnv:
     # ------------------------------------------------------------------ #
     # HAL primitives (the only API exposed to generated policies)
     # ------------------------------------------------------------------ #
+    def _log_skill(self, skill, args, result):
+        entry = {"seq": len(self.skill_log) + 1, "skill": skill, "args": args, "step": self.step_count, "result": result}
+        self.skill_log.append(entry)
+        if self.live and self.frame_hook is not None and hasattr(self.frame_hook, "on_skill"):
+            self.frame_hook.on_skill(self, entry)
+        return entry
+
     def execute_primitive(self, primitive_name: str, **kwargs) -> bool:
+        args = {"primitive": primitive_name, **{k: v for k, v in kwargs.items()}}
         if primitive_name == "grip_plug":
             self.phase = "grip"
             for i in range(10):
@@ -429,6 +475,7 @@ class DataCenterRackEnv:
                 self.step_sim(1)
             self.is_gripped = True
             self.step_sim(2)
+            self._log_skill("execute_primitive", args, "gripped")
             return True
 
         if primitive_name in ("pull_linear", "push_linear"):
@@ -437,12 +484,18 @@ class DataCenterRackEnv:
             sign = -1.0 if primitive_name == "pull_linear" else 1.0
             self.phase = "pull" if sign < 0 else "push"
             step_delta = dist / steps
-            for _ in range(steps):
-                self.current_x += sign * step_delta
-                self.step_sim(1)
-                self.trajectory_log.append(self.get_telemetry())
+            try:
+                for _ in range(steps):
+                    self.current_x += sign * step_delta
+                    self.step_sim(1)
+                    self.trajectory_log.append(self.get_telemetry())
+            except MotionHeld as held:
+                self._log_skill("execute_primitive", args, f"held: {held}")
+                raise
+            self._log_skill("execute_primitive", args, f"displacement {1000 * self._displacement_now():.1f} mm")
             return True
 
+        self._log_skill("execute_primitive", args, "unknown primitive")
         return False
 
     def wait(self, seconds: float = 1.0):
@@ -452,6 +505,7 @@ class DataCenterRackEnv:
         else:
             ticks = max(1, int(seconds / self.model.opt.timestep))
         self.step_sim(ticks)
+        self._log_skill("wait", {"seconds": seconds}, "ok")
 
     def approach(self, steps: int = 40):
         """Deterministic pre-roll: the gripper descends from APPROACH_LIFT onto the target port."""
@@ -474,6 +528,8 @@ class DataCenterRackEnv:
             self._apply_kinematics()
             mujoco.mj_step(self.model, self.data)
             self._update_extrema()
+            if self.motion_monitor is not None:
+                self.motion_monitor(self)          # may raise MotionHeld
             if self.viewer is not None:
                 self.viewer.sync()
                 if self.render_mode == "gui":
@@ -523,15 +579,23 @@ class DataCenterRackEnv:
         }
 
     def outcome(self) -> dict:
-        """Task outcome derived from the run: disengaged, reseated, cable contact."""
+        """
+        Task outcome derived from the simulator state, with the two verdicts kept separate:
+          * transceiver: disengaged (max travel >= PLUG_DISENGAGE_THRESHOLD_X) and reseated (final |offset| <= 4 mm)
+          * cable: contact (any non-zero normal force) and within the configured force limit
+        """
         final = self._displacement_now()
         disengaged = self.max_displacement_x >= config.PLUG_DISENGAGE_THRESHOLD_X
         reseated = abs(final) <= 0.004
+        contact = self.peak_contact_force > 0.0
         return {
-            "task_completed": bool(disengaged and reseated and self.peak_contact_force == 0.0),
+            "task_completed": bool(disengaged and reseated and not contact),
+            "transceiver_ok": bool(disengaged and reseated),
+            "cable_ok": bool(not contact),
+            "cable_within_force_limit": bool(self.peak_contact_force < config.CRITICAL_FORCE_LIMIT_N),
             "disengaged": bool(disengaged),
             "reseated": bool(reseated),
-            "cable_contact": bool(self.peak_contact_force > 0.0),
+            "cable_contact": bool(contact),
             "peak_force_n": float(self.peak_contact_force),
             "min_clearance_mm": float(1000.0 * (self.min_clearance if self.min_clearance != float("inf") else self.get_lidar_distance())),
             "max_displacement_mm": float(1000.0 * self.max_displacement_x),
@@ -596,7 +660,76 @@ class DataCenterRackEnv:
             "Gripper": self.data.geom_xpos[self.gripper_geom_id].copy() + np.array([0.0, 0.0, 0.10]),
         }
 
+    # ------------------------------------------------------------------ #
+    # wrist RGB-D camera: cable detection from rendered pixels
+    # ------------------------------------------------------------------ #
+    def set_camera_occluded(self, occluded: bool):
+        """Drop a lens cover in front of the wrist camera (simulates an occluded / dirty camera)."""
+        self.camera_occluded = bool(occluded)
+        gid = self.model.geom("lens_cover").id
+        self.model.geom_rgba[gid, 3] = 1.0 if occluded else 0.0
+
+    def _wrist(self):
+        if self._wrist_renderers is None:
+            w, h = WRIST_CAM_SIZE
+            rgb = mujoco.Renderer(self.model, h, w)
+            dep = mujoco.Renderer(self.model, h, w)
+            dep.enable_depth_rendering()
+            self._wrist_renderers = (rgb, dep)
+        return self._wrist_renderers
+
+    def camera_observation(self, with_image: bool = True) -> dict:
+        """
+        Detect the orange cable in the wrist camera's RGB frame and estimate its distance from the
+        aligned metric depth buffer (same render pass, same camera, so RGB and depth are pixel-aligned).
+
+        Returns:
+          detected, pixel_count, bbox [x0,y0,x1,y1], camera_clearance_m (median depth over cable
+          pixels, i.e. distance from the camera plane on the palm's rear face to the cable surface),
+          depth_spread_m (p90-p10), confidence: "confident" | "uncertain" | "none", reason,
+          sim_clearance_m (geometry, for comparison), rgb / mask arrays when with_image.
+        """
+        rgb_r, dep_r = self._wrist()
+        rgb_r.update_scene(self.data, camera="wrist_cam")
+        rgb = rgb_r.render().copy()
+        dep_r.update_scene(self.data, camera="wrist_cam")
+        depth = dep_r.render().copy()
+        h, s, v = rgb_to_hsv(rgb)
+        c = CABLE_HSV
+        mask = (h >= c["h_lo"]) & (h <= c["h_hi"]) & (s >= c["s_lo"]) & (v >= c["v_lo"]) & np.isfinite(depth)
+        # keep only the dense band: drop sparse rows (speckle on the floor / panel edges)
+        rows = mask.sum(axis=1)
+        if rows.max() > 0:
+            mask &= (rows >= 0.2 * rows.max())[:, None]
+        n = int(mask.sum())
+        obs = {"detected": n >= CAM_MIN_PIXELS, "pixel_count": n, "bbox": None, "camera_clearance_m": None,
+               "depth_spread_m": None, "confidence": "none", "reason": "cable not visible",
+               "sim_clearance_m": float(self.get_lidar_distance()), "image_size": list(WRIST_CAM_SIZE)}
+        if obs["detected"]:
+            ys, xs = np.nonzero(mask)
+            d = depth[mask]
+            p10, p50, p90 = np.percentile(d, [10, 50, 90])
+            obs["bbox"] = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+            obs["camera_clearance_m"] = float(p50)
+            obs["depth_spread_m"] = float(p90 - p10)
+            if obs["depth_spread_m"] > CAM_MAX_DEPTH_SPREAD_M:
+                obs["confidence"], obs["reason"] = "uncertain", f"depth spread {1000 * obs['depth_spread_m']:.0f} mm over cable pixels"
+            elif n < 3 * CAM_MIN_PIXELS:
+                obs["confidence"], obs["reason"] = "uncertain", f"only {n} cable pixels (partially occluded)"
+            else:
+                obs["confidence"], obs["reason"] = "confident", f"{n} cable pixels, depth p10-p90 within {1000 * CAM_MAX_DEPTH_SPREAD_M:.0f} mm"
+        if with_image:
+            obs["rgb"], obs["mask"] = rgb, mask
+        return obs
+
     def close(self):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
+        if self._wrist_renderers is not None:
+            for r in self._wrist_renderers:
+                try:
+                    r.close()
+                except Exception:
+                    pass
+            self._wrist_renderers = None

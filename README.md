@@ -3,158 +3,148 @@
 **AgentVerse 2026 - Robotics track**
 
 A local LLM writes the procedure a data-centre maintenance robot should run. Before the robot
-moves, ModelRisk-Guard executes that code in perturbed MuJoCo sandboxes, measures what would
-happen to the neighbouring fibre cable, feeds the measured evidence back to the model, and
-only executes a revision that passes. Everything runs on one laptop: Ollama (`qwen2.5-coder:7b`),
-MuJoCo physics, and a browser dashboard served by the Python standard library. No cloud.
+moves, ModelRisk-Guard executes that exact code in a MuJoCo sandbox, measures what would happen,
+feeds the measured evidence back to the model, and only executes a revision that passes, through
+the same restricted skill API, logging every skill call against the policy id. Everything runs on
+one laptop: Ollama (`qwen2.5-coder:7b`), MuJoCo, and a browser dashboard served by the Python
+standard library. No cloud.
 
-The demo task is fixed: *"Disengage the target optical transceiver in slot 1 without touching
-the neighbouring fibre cable, then reseat it."* The raw model procedure pulls the module 120 mm
-(a generic vendor stroke); the gripper sweeps into a fibre trunk routed across the rack front
-after about 45 mm. The guard catches it, the model revises the stroke to about 37 mm, and the
-revised procedure runs live without contact.
+Two missions share the pipeline:
 
-## Quick start
+| Mission | Task typed in the dashboard | Hazard | Guard |
+|---|---|---|---|
+| Transceiver reseat | *Disengage the target optical transceiver in slot 1 without touching the neighbouring fibre cable, then reseat it.* | a fibre trunk routed across the rack front, 45 mm behind the gripper | 4 perturbed physics sandboxes + wrist RGB-D camera confirmation |
+| Rack navigation | *Go to Rack A and inspect it.* | a maintenance cart moved into the aisle | sandbox rollout with simulated LiDAR + route validation |
+
+## Launch
 
 ```bash
 pip install -r requirements.txt          # mujoco, numpy, rich, pillow
 ollama pull qwen2.5-coder:7b             # once, ~4.7 GB
-ollama run qwen2.5-coder:7b "hi"         # warm the model before a demo (cold load takes ~90 s)
+ollama run qwen2.5-coder:7b "hi"         # warm the model before a demo (cold load ~90 s)
 python -m demo.server                    # opens http://127.0.0.1:8000
 ```
 
-Rehearsal without Ollama: `python -m demo.server --stub` (deterministic stand-in policies, clearly
-labelled `stub`). Record the next genuine run as the fallback: `python -m demo.server --record`.
-Page-only previews: `index.html?mock=1` plays a scripted fake run with no backend;
-`?static=1` renders the current server state without the live stream (used for screenshots).
+Without Ollama: `python -m demo.server --stub` (deterministic stand-in policies, labelled `stub`).
+`--record` saves the next genuine run to `demo/recorded_run.json`, which **Replay recorded run** plays
+back under an amber "RECORDED RUN" banner.
 
-## Demo script (under one minute after the model is warm)
+## Demo script
 
-1. Open `http://127.0.0.1:8000`, press **Fullscreen**.
-2. Leave the prefilled task, or edit it. Press **Run Comparison**.
-3. Watch: the model streams the procedure (about 5 s) -> **RAW LLM POLICY - SANDBOX** runs the
-   frozen code directly, the gripper hits the cable, the raw result card turns **FAILED** (about 15 s)
-   -> the guard tests the same frozen code in 4 perturbed sandboxes and shows which checks failed
-   with the measured values -> the model streams a revision, the diff is shown, the guard re-tests
-   it -> **GUARDED LLM POLICY - LIVE** executes the approved revision from the same saved state and
-   the guarded card turns **COMPLETED** (about 15 s).
-4. **Reset** clears everything for the next run. **Replay recorded run** plays back a previously
-   generated comparison under an amber "RECORDED RUN" banner if the model is unavailable.
+1. Press **Fullscreen**. Mission **Transceiver reseat** is selected; the task is prefilled.
+2. Press **Run**. The model streams the procedure (about 5 s). The ORIGINAL procedure runs directly
+   in a sandbox: the gripper pulls 120 mm and sweeps into the cable (result card FAILED). The guard
+   then tests the same frozen code in 4 perturbed sandboxes and shows one plain-English message
+   (INTERCEPTED, peak force, first contact). The model's revision streams in with the diff
+   (0.120 m -> 0.037 m); the guard re-tests it; the wrist camera confirms the cable; the approved
+   code runs live and the GUARDED card turns COMPLETED. About 60 s with a warm model.
+3. Optional setup toggles, applied identically to both paths: **Move cable toward the gripper (mm)**
+   (the camera clearance and the simulator clearance both drop by that amount) and **Occlude the
+   wrist camera** (the guard HOLDS the approved motion: "camera could not confirm the cable").
+4. Switch to **Rack navigation**, tick **Move the maintenance cart into the aisle**, press **Run**.
+   The model writes `follow_route("R1"); inspect_rack("Rack A")`. The ORIGINAL run drives into the
+   aisle until the LiDAR sees the cart and stops 4.9 m short (FAILED). The guard's sandbox rollout
+   reports the block and that route R2 validated clear; the revision takes R2; the robot reaches
+   Rack A on the map and the inspection skill runs there (COMPLETED). Untick the cart and run again:
+   the original procedure passes on R1 and the page says no revision was needed.
+5. **Reset** clears the page. The **Code** panel's "Executed skills" tab lists every skill call the
+   simulator ran, with the policy id and a check that the executed code is byte-identical to the
+   approved code. **Technical details** holds the guard checks, per-sandbox tables, hashes and the
+   timeline.
 
-If a fresh procedure already passes the guard, the dashboard says so and runs it without a
-revision. If no revision passes, the guarded card reads **WITHHELD**: the robot does not move and
-the rejected candidate is shown only as a labelled sandbox replay.
+Exact prompts: `Disengage the target optical transceiver in slot 1 without touching the neighbouring
+fibre cable, then reseat it.` and `Go to Rack A and inspect it.` Both are editable.
 
-## What the dashboard shows
+## What is measured, and how (transceiver)
 
-![Dashboard after a run: raw policy failed, guarded revision completed](demo/screenshots/dashboard_1280x720.png)
+See [docs/AUDIT_TRANSCEIVER.md](docs/AUDIT_TRANSCEIVER.md) for the line-by-line trace. In short:
 
-* **Viewport**: real MuJoCo frames (1280x720) from a fixed three-quarter camera showing the arm,
-  gripper, target transceiver and fibre cable; a contact close-up; a HUD with extraction travel,
-  cable force (limit 20 N) and minimum clearance; colour-coded 3D labels on the target, the cable
-  and the gripper; a data-centre floor plan with the serviced rack.
-* **Generated procedure**: the model's actual output, streamed token by token, with its source.
-* **Guard report**: decision, the failing checks with measured value vs limit (peak cable force,
-  violation probability, epistemic variance, combined risk, minimum clearance, task completion),
-  and the per-sandbox table (cable offset, friction, peak force, clearance).
-* **Revised procedure** with a line diff, **two result cards** that stay visible, a **fairness
-  strip** (seed, frozen policy hash, saved-state hash, "identical" check) and an **event timeline**.
-* A live strip chart of cable force and clearance for both runs.
-
-Every number on the page is computed from the runs; nothing is hard-coded in the page.
+* **Simulator clearance**: signed distance between the gripper palm (or plug) and the cable capsule,
+  `mj_geomDistance`, minimum taken every 5 ms tick over the whole motion. Labelled "simulator
+  clearance" because it comes from the simulator's geometry.
+* **Camera clearance**: the wrist camera on the palm's rear face renders RGB and an aligned metric
+  depth buffer; the orange cable is segmented in HSV and the median depth over its pixels is the
+  distance from the palm's rear face to the cable. Confidence is `confident`, `uncertain` or `none`.
+  The guarded motion is held when the camera is not confident before or during the pull.
+* **Cable contact / peak force**: sum of the normal contact forces between the cable and the
+  palm/plug from `mj_contactForce`, peak over the motion. Any contact fails the task.
+* **20 N limit**: `config.CRITICAL_FORCE_LIMIT_N`, a **configured simulation threshold** standing in
+  for the port's structural rating; it is not a measured hardware value.
+* **Verdicts**: the transceiver outcome (disengaged >= 30 mm, reseated within 4 mm) and the cable
+  outcome (no contact, force below the limit) are checked separately. A 20 mm pull is rejected by
+  the task check only; a 120 mm pull is intercepted by the force check.
 
 ## How the comparison is kept fair
 
-* The procedure is generated **once** and frozen (sha256 shown on the page).
-* A pristine environment is built, the robot performs the same deterministic approach, and the
-  full MuJoCo state is hashed. The raw run and the guarded run are each built the same way and
-  their state hashes are compared with the pristine hash before any policy code runs.
-* The perturbed sandboxes use a fixed seed (`config.DEMO_SEED`), so the guard's verdict is
-  reproducible.
-* The guarded path executes the **revised** code only after it passed the guard; the raw path
-  executes the **original** code. Both start from the identical saved state.
+* One generation per run; the code is frozen and identified by its sha256 (the policy id).
+* A pristine environment is built with the same setup for the original run, the guard sandboxes
+  and the guarded run; their state hashes are compared before any policy code runs.
+* The guard verifies the exact text that is later executed; executed skill calls carry the policy id
+  and the page shows "executed code matches approved policy".
+* If no revision passes, the robot does not move; the last rejected candidate is shown only as a
+  labelled sandbox replay.
 
-## Architecture
+## Navigation mission
 
-```
-task text -> agent/llm_client.py (Ollama, streaming) -> agent/ast_guard.py (imports banned, skills only)
-          -> demo/comparison.py
-               RAW:     sim/environment.py executes the frozen code directly (rendered)
-               GUARDED: sim/risk_engine.py runs P=4 perturbed sandboxes
-                        -> evidence -> agent/prompts.py HOT_PATCH prompt -> revision -> re-check
-                        -> live execution only if approved (rendered), else motion withheld
-          -> demo/server.py (stdlib HTTP + Server-Sent Events) -> demo/static/index.html
-```
-
-* **Robot skill API** exposed to generated code: `execute_primitive("grip_plug")`,
-  `execute_primitive("pull_linear"|"push_linear", distance=m)`, `wait(s)`, `read_distance_sensor()`,
-  `read_force_sensor()`. Anything else fails the static check.
-* **Guard checks** (`sim/risk_engine.py`): peak cable force < 20 N, zero violation probability,
-  normalised ensemble variance omega <= 0.3 (Radic Webster et al. 2021), combined risk <= 0.3,
-  positive minimum clearance, and task completion (stroke >= 30 mm, reseated, no contact) in every
-  sandbox. The sandboxes perturb the cable position along the extraction axis (+/-5 mm), its
-  lateral centre and its friction.
-* **Evidence fed back to the model**: peak force, number of violating sandboxes, first-contact
-  travel, minimum clearance, task-completion failures, and the admissible stroke window derived
-  from those measurements (disengage threshold + margin to first contact - margin). The model
-  rewrites the code; the guard verifies whatever it returns.
-* **Runtime reflex** (`main.py`, terminal demo): during a live pull the measured clearance is
-  monitored; if the cable carrier shifts mid-stroke (unscripted event) the motion halts below
-  12 mm clearance and the plug is reseated from the measured displacement.
-
-## Simulation model and its simplifications
-
-* **Physics (collision) geometry**: gripper palm, transceiver plug, fibre trunk cable on a
-  spring-mounted carrier (deflects when struck), floor. Cable contact forces are real MuJoCo
-  contacts; the clearance is the signed distance between the palm/plug and the cable surface
-  (`mj_geomDistance`).
-* **Visual-only geometry**: rack cabinets, front panels, ports, neighbour modules, patch cables,
-  the mobile base and the arm links. They never collide.
-* **Kinematic simplification**: the gripper palm is driven kinematically along the extraction axis
-  (and a lift axis for the approach), exactly as the original HAL did. A planar two-link arm plus a
-  vertical wrist stem is solved analytically every step so the arm visibly follows the gripper;
-  the arm carries no dynamics and no joint torques are simulated. Finger closing is cosmetic.
-* The "first contact" distances reported by the guard are measured in simulation and include the
-  contact-detection lag of the kinematic drive (about 3 mm past the geometric limit).
+`sim/nav_env.py`: a known 12 x 10 m hall with six named racks, a dock, two routes to Rack A's
+service point (R1 through the cold aisle, 7.6 m; R2 around the north corridor, 18 m) and a
+maintenance cart that can be moved into the aisle. The robot base is kinematic (x, y, yaw written
+each 50 ms control tick); the LiDAR is 36 MuJoCo rangefinder rays at 10 degree spacing, range 8 m,
+cast against the real scene geometry including the cart. A return closer than 0.5 m inside a
++/-30 degree heading cone stops the robot ("blocked at (x, y)"). The pose shown on the map is the
+simulator's ground truth; there is no localisation estimate. Arrival is read from that pose and the
+mission completes only when `inspect_rack("Rack A")` succeeds within 0.6 m of the service point.
 
 ## Tests
 
 ```bash
-python -m tests.test_sim          # scene, HAL, clearance sensor, guard intercepts/approves
-python -m tests.test_agent        # AST whitelist, repair cycle (uses Ollama if up, else offline fallback)
-python -m tests.test_integration  # full pipeline incl. the unscripted mid-stroke disturbance
-python -m tests.test_demo         # comparison protocol: identical policy+state for both paths,
-                                  # unsafe candidate stays blocked, approved revision completes the task,
-                                  # fresh passing policy reported honestly (no Ollama, no rendering)
+python -m tests.test_sim          # scene, HAL, clearance sensor, guard; short pull rejected by the task
+                                  # check only; wrist camera detection tracks a cable shift, occlusion -> uncertain
+python -m tests.test_agent        # AST whitelist, repair cycle (Ollama if up, else offline fallback)
+python -m tests.test_integration  # terminal pipeline incl. the mid-stroke disturbance reflex
+python -m tests.test_demo         # identical policy + state for both paths; unsafe candidate withheld;
+                                  # incomplete vs violating pulls rejected for different reasons; executed
+                                  # skill trace matches the approved policy id; occluded camera holds motion
+python -m tests.test_nav          # robot reaches Rack A on a clear route and only completes after inspect_rack;
+                                  # cart in the aisle changes the LiDAR scan and the route verdict; blocked
+                                  # route rejected, R2 revision executed with matching policy id
 ```
 
 ## Known limitations
 
-* The system prompt carries a generic vendor extraction stroke (0.12 m). That ungrounded prior is
-  what makes the raw failure reproducible; without it the 7B model sometimes writes a procedure
-  that already passes, which the dashboard reports honestly.
-* The guard gives the model the measured admissible window. Without it, the 7B model tends to
-  reuse the contact distance itself or slips between millimetres and metres. The guard re-verifies
-  every revision, so a bad revision is withheld, never executed.
-* Omega is reported exactly as the Radic Webster normalised variance; with a 1 N^2 baseline it is
-  very large whenever sandboxes disagree about contact, so it behaves like a binary flag.
-* The fibre cable is a single rigid capsule on a spring carrier; real cable bundles are deformable.
-  The 20 N limit is a stand-in for the transceiver/port structural rating.
-* Live execution is paced for the camera (about 20 ms per physics tick); the physics is identical
-  to the headless sandboxes.
-* Cold-starting Ollama can take ~90 s; warm the model before recording. The dashboard surfaces a
-  model timeout as a visible error and offers the recorded run.
+* The system prompt carries a generic vendor extraction stroke (0.12 m). That ungrounded prior
+  makes the raw failure reproducible; without it the 7B model sometimes writes a passing procedure,
+  which the page reports honestly ("no revision needed").
+* The repair prompt gives the model the measured admissible stroke window (metres). Without it the
+  7B model reuses the contact distance or slips between millimetres and metres. Every revision is
+  re-verified; a bad one is withheld.
+* Cable detection is colour segmentation of a rendered image; it would need a learned detector on
+  real camera data. Depth is the renderer's z-buffer, i.e. an ideal calibrated depth camera.
+* The cable is one rigid capsule on a spring carrier; the gripper is driven kinematically; the arm
+  is a visual two-link IK representation without joint dynamics. Peak forces (hundreds of N) prove the
+  collision, they are not calibrated hardware forces.
+* Navigation: kinematic base, no contact physics on the base, two fixed routes from the scenario
+  config (the "replan" is the model choosing the other validated route, not a path planner), pose
+  from the simulator. Full mobile navigation would need a localisation estimate (e.g. scan matching
+  on the LiDAR), a planner over an occupancy grid, and base dynamics.
+* Omega is reported as the paper's normalised variance; it is very large whenever sandboxes
+  disagree about contact and behaves like a binary flag.
+* Live execution is paced for the camera; the physics is identical to the headless sandboxes.
+  A cold Ollama start takes ~90 s; the page shows a visible error and offers the recorded run.
 
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
-| `demo/server.py` | dashboard server (`python -m demo.server`) |
-| `demo/comparison.py` | raw-vs-guarded orchestration, frame streaming, recording/replay |
+| `demo/server.py` | dashboard server (`python -m demo.server`), missions, SSE |
+| `demo/comparison.py` | shared original-vs-guarded flow, transceiver mission, frame + wrist-camera streaming, recording |
+| `demo/nav_runner.py` | navigation mission runner and LiDAR route-validation guard |
 | `demo/static/index.html` | the dashboard (single file, no external assets) |
-| `demo/EVENTS.md` | the event contract between server and page |
-| `sim/environment.py` | MuJoCo scene, robot HAL, sensors, cameras |
-| `sim/risk_engine.py` | perturbed-sandbox guard |
-| `agent/llm_client.py`, `agent/prompts.py`, `agent/ast_guard.py` | local LLM, prompts, static check |
+| `demo/EVENTS.md` | event contract between server and page |
+| `sim/environment.py` | rack scene, arm, gripper HAL, wrist RGB-D camera, clearance and force measurement |
+| `sim/nav_env.py` | hall map, kinematic mobile base, LiDAR, navigation skills |
+| `sim/risk_engine.py` | perturbed-sandbox guard for the transceiver mission |
+| `agent/` | local LLM client (streaming), prompts for both missions, static code check |
+| `docs/AUDIT_TRANSCEIVER.md` | trace of every dashboard number to code and simulator data |
 | `main.py` | terminal + MuJoCo viewer demo with the mid-stroke disturbance reflex |
-| `tests/` | the four suites above |
+| `tests/` | the five suites above |
