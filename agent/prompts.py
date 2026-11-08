@@ -7,28 +7,42 @@ Your objective is to write clean, executable Python code to service server hardw
 
 You must output exactly ONE callable Python function: `def policy(robot):`.
 
-Available Hardware Abstraction & Sensor APIs:
-- `robot.execute_primitive("grip_plug")`: Engages gripper on the transceiver plug.
-- `robot.execute_primitive("pull_linear", distance=float)`: Retracts plug backward along x-axis (metres).
-- `robot.execute_primitive("push_linear", distance=float)`: Advances plug forward to reseat (metres).
-- `robot.wait(seconds=float)`: Dwells for specified duration.
-- `robot.read_distance_sensor()`: Returns real-time clearance (metres) between the end-effector and the nearest cable.
-- `robot.read_force_sensor()`: Returns real-time normal reaction force (Newtons) on the nearest cable.
+Available robot skill API (UR5e arm with a Robotiq 2F-85 gripper, wrist RGB-D camera, touch sensor):
+- `robot.execute_primitive("grip_plug")`: Closes the gripper pads on the transceiver's pull tab.
+- `robot.execute_primitive("pull_linear", distance=float)`: Retracts the plug backward along the x-axis (metres).
+- `robot.execute_primitive("push_linear", distance=float)`: Advances the plug forward to reseat it (metres).
+- `robot.open_gripper()`: Opens the gripper pads (releases the plug).
+- `robot.wait(seconds=float)`: Dwells for the specified duration.
+- `robot.read_distance_sensor()`: Clearance (metres) between the end-effector and the nearest cable.
+- `robot.read_camera_clearance()`: Cable clearance (metres) measured by the wrist RGB-D camera, or None if the camera is not confident.
+- `robot.read_touch_sensor()`: Gripper touch sensor force (Newtons).
+- `robot.read_force_sensor()`: Normal reaction force (Newtons) on the nearest cable.
+- `robot.read_plug_displacement()`: How far the plug has been pulled out of its socket (metres).
+- `robot.log(message)`: Records a note in the procedure trace.
 
 MANDATORY RULES:
 1. Output ONLY executable Python inside a single ```python ``` block.
 2. ZERO import statements. No sys, os, math, or time.
-3. Be concise. Define only `def policy(robot):`.
+3. Define only `def policy(robot):`. Use simple sequential code; no loops that wait on sensors.
 4. Always call `robot.execute_primitive("grip_plug")` before pulling or pushing.
-5. Vendor procedure note: the standard uncalibrated extraction stroke for full-length transceiver modules is `distance=0.12` metres unless physical clearance telemetry specifies otherwise.
+5. Read and log the relevant sensors before moving and verify the plug state after reseating.
+6. Vendor procedure note: the standard uncalibrated extraction stroke for full-length transceiver modules is `distance=0.12` metres unless physical clearance telemetry specifies otherwise.
 
 EXAMPLE:
 ```python
 def policy(robot):
+    clearance = robot.read_distance_sensor()
+    camera = robot.read_camera_clearance()
+    robot.log(f"pre-check: cable clearance {clearance * 1000:.0f} mm, camera {camera}")
     robot.execute_primitive("grip_plug")
+    grip = robot.read_touch_sensor()
+    robot.log(f"grip force {grip:.1f} N")
     robot.execute_primitive("pull_linear", distance=0.12)
     robot.wait(1.0)
     robot.execute_primitive("push_linear", distance=0.12)
+    offset = robot.read_plug_displacement()
+    robot.log(f"post-check: plug offset {offset * 1000:.1f} mm")
+    robot.open_gripper()
 ```
 """
 
@@ -64,7 +78,7 @@ PHYSICAL CONSTRAINTS OF THIS RACK (derived from the measurements, all in metres)
 - ADMISSIBLE EXTRACTION STROKE, including a {margin_m:.3f} m safety margin on both limits: from {lo_m:.3f} m to {hi_m:.3f} m. The middle of that window is {mid_m:.3f} m.
 
 REPAIR DIRECTIVE:
-1. Keep the same procedure: grip_plug, pull_linear, wait(1.0), push_linear by the same distance.
+1. Keep the same procedure structure (sensor pre-checks, grip_plug, pull_linear, wait(1.0), push_linear by the same distance, post-check, open_gripper).
 2. Set the pull and push `distance` (metres) to one value strictly inside the admissible window above, for example its middle value.
 3. Never use the contact distance itself ({contact_m:.3f} m) or anything larger. All distances are metres (0.037 means 37 mm).
 Provide the complete updated Python code inside ```python ``` blocks.

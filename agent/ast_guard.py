@@ -5,11 +5,17 @@ import ast
 
 ALLOWED_PRIMITIVES = {"grip_plug", "pull_linear", "push_linear"}
 ALLOWED_METHODS = {
-    "execute_primitive", 
-    "wait", 
-    "read_distance_sensor", 
-    "read_force_sensor", 
-    "get_telemetry"
+    "execute_primitive",
+    "wait",
+    "read_distance_sensor",
+    "read_force_sensor",
+    "read_touch_sensor",
+    "read_camera_clearance",
+    "read_plug_displacement",
+    "open_gripper",
+    "close_gripper",
+    "log",
+    "get_telemetry",
 }
 
 NAV_ALLOWED_METHODS = {"follow_route", "inspect_rack", "read_lidar_min", "wait"}

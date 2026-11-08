@@ -509,12 +509,53 @@ class DataCenterRackEnv:
         return float(min(d_palm, d_plug, config.LIDAR_MAX_RANGE_M))
 
     def read_distance_sensor(self) -> float:
-        """HAL API: clearance between the end-effector and the nearest cable (metres)."""
-        return self.get_lidar_distance()
+        """HAL API: clearance between the end-effector and the nearest cable (metres, simulator geometry)."""
+        v = self.get_lidar_distance()
+        self._log_skill("read_distance_sensor", {}, f"{1000 * v:.1f} mm clearance to the cable")
+        return v
 
     def read_force_sensor(self) -> float:
         """HAL API: current normal reaction force on the fibre cable (Newtons)."""
-        return self._cable_force_now()
+        v = self._cable_force_now()
+        self._log_skill("read_force_sensor", {}, f"{v:.2f} N on the cable")
+        return v
+
+    def read_touch_sensor(self) -> float:
+        """HAL API: gripper touch sensor (N), from the MuJoCo touch sensor on the palm."""
+        v = self.read_touch()
+        self._log_skill("read_touch_sensor", {}, f"{v:.2f} N on the gripper")
+        return v
+
+    def read_camera_clearance(self):
+        """HAL API: cable clearance from the wrist RGB-D camera (metres) or None when the camera is not confident."""
+        obs = self.camera_observation(with_image=False)
+        v = obs["camera_clearance_m"] if obs["confidence"] == "confident" else None
+        self._log_skill("read_camera_clearance", {}, (f"{1000 * v:.1f} mm ({obs['confidence']})" if v is not None else f"uncertain: {obs['reason']}"))
+        return v
+
+    def read_plug_displacement(self) -> float:
+        """HAL API: how far the plug has been pulled out of its socket (metres, from the plug joint)."""
+        v = self._displacement_now()
+        self._log_skill("read_plug_displacement", {}, f"{1000 * v:.1f} mm out of the socket")
+        return v
+
+    def open_gripper(self) -> bool:
+        """HAL API: open the gripper pads (releases the plug)."""
+        self.phase = "grip"
+        for i in range(10):
+            self.grip_fraction = 1.0 - (i + 1) / 10
+            self.step_sim(1)
+        self.is_gripped = False
+        self._log_skill("open_gripper", {}, "pads open")
+        return True
+
+    def close_gripper(self) -> bool:
+        """HAL API: close the gripper pads on the plug tail (same as execute_primitive('grip_plug'))."""
+        return self.execute_primitive("grip_plug")
+
+    def log(self, message) -> None:
+        """HAL API: record a note in the executed-skill trace."""
+        self._log_skill("log", {"message": str(message)[:160]}, "noted")
 
     def read_touch(self) -> float:
         """Gripper touch sensor (N): normal contact force on the gripper proxy, from the MuJoCo touch sensor."""
