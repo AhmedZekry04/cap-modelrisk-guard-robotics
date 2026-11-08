@@ -24,7 +24,7 @@
   --green-bg: rgba(74,222,128,0.14);
   --amber-bg: rgba(251,191,36,0.16);
   --cyan-bg: rgba(56,189,248,0.14);
-  /* chart series (validated on #111827) */
+  /* chart series (validated on #111827: lightness band, chroma, contrast pass; red/green CVD pair is backed by end-labels + legend) */
   --s-raw: #e34948;
   --s-guarded: #1baf7a;
   --s-replay: #c98500;
@@ -37,368 +37,381 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--fs);
-  line-height: 1.3;
-  height: 100vh;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
-  width: 100vw;
+  background: var(--bg); color: var(--text); font-family: var(--font); font-size: var(--fs); line-height: 1.3;
+  height: 100vh; width: 100vw; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr);
 }
 button { font: inherit; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #27354a; border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+[hidden] { display: none !important; }
 
 /* ---------- top bar ---------- */
-.topbar {
-  display: flex; align-items: center; gap: var(--gap); min-width: 0;
-  padding: calc(var(--gap) * 0.8) var(--gap);
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
+.topbar { display: flex; flex-direction: column; gap: 0.35em; padding: 0.45em var(--gap); border-bottom: 1px solid var(--border); background: var(--panel); min-width: 0; }
+.topbar .row { display: flex; align-items: center; gap: var(--gap); min-width: 0; }
+.brand { display: flex; flex-direction: column; flex: none; white-space: nowrap; margin-right: 0.2em; }
+.brand h1 { margin: 0; font-size: 1.35em; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; }
+.brand .sub { color: var(--muted); font-size: 0.74em; }
+@media (max-width: 1500px) { .brand .sub { display: none; } }
+.seg { display: inline-flex; flex: none; border: 1px solid var(--border-2); border-radius: 7px; overflow: hidden; background: var(--bg); }
+.seg button { background: transparent; border: 0; color: var(--text-2); padding: 0.42em 0.9em; cursor: pointer; font-weight: 600; border-right: 1px solid var(--border-2); white-space: nowrap; }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: #1b2537; }
+.seg button.on { background: #0e7490; color: #fff; }
+.setup { display: flex; gap: 0.5em; align-items: center; flex: none; min-width: 0; }
+.setup label { display: inline-flex; align-items: center; gap: 0.45em; color: var(--text-2); font-size: 0.85em; white-space: nowrap; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.28em 0.6em; cursor: pointer; }
+.setup input[type=number] { width: 4.3em; font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 4px; padding: 0.12em 0.3em; }
+.setup input[type=checkbox] { accent-color: #22d3ee; width: 1.05em; height: 1.05em; margin: 0; }
+.spacer { flex: 1 1 0; min-width: 0; }
+.tasklabel { color: var(--muted); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; flex: none; }
+textarea#task {
+  flex: 1 1 200px; min-width: 0; resize: none; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border-2); border-radius: 6px; padding: 0.4em 0.7em; line-height: 1.3; height: 2.15em; max-height: 5em; overflow: auto;
 }
-.brand { display: flex; flex-direction: column; flex: none; margin-right: var(--gap); white-space: nowrap; }
-.brand h1 { margin: 0; font-size: 1.45em; font-weight: 700; letter-spacing: 0.02em; }
-.brand .sub { color: var(--muted); font-size: 0.82em; }
-.task { flex: 1 1 160px; min-width: 140px; display: flex; align-items: center; gap: 6px; }
-.task label { color: var(--muted); font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
-.task input {
-  flex: 1; min-width: 0; font: inherit; color: var(--text);
-  background: var(--bg); border: 1px solid var(--border-2); border-radius: 6px;
-  padding: 0.45em 0.7em;
-}
-.task input:focus { outline: 1px solid var(--cyan); border-color: var(--cyan); }
-.btn {
-  background: #1b2537; color: var(--text); border: 1px solid var(--border-2);
-  border-radius: 6px; padding: 0.45em 0.85em; cursor: pointer; white-space: nowrap;
-}
-.btn:hover { background: #243049; }
+textarea#task:focus { outline: 1px solid var(--cyan); border-color: var(--cyan); }
+.btn { background: #1b2537; color: var(--text); border: 1px solid var(--border-2); border-radius: 6px; padding: 0.42em 0.85em; cursor: pointer; white-space: nowrap; flex: none; }
+.btn:hover:not(:disabled) { background: #243049; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn.primary { background: #0e7490; border-color: #22d3ee; color: #fff; font-weight: 600; }
+.btn.primary { background: #0e7490; border-color: #22d3ee; color: #fff; font-weight: 700; padding-left: 1.3em; padding-right: 1.3em; }
 .btn.primary:hover:not(:disabled) { background: #0891b2; }
 .pill {
-  display: inline-flex; align-items: center; gap: 0.5em;
-  padding: 0.35em 0.8em; border-radius: 999px; border: 1px solid var(--border-2);
-  background: var(--bg); white-space: nowrap; max-width: 34vw; min-width: 7em; flex: 0 1 auto; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 0.5em; padding: 0.32em 0.8em; border-radius: 999px; border: 1px solid var(--border-2);
+  background: var(--bg); white-space: nowrap; min-width: 6em; max-width: 42vw; flex: 0 1 auto; overflow: hidden;
 }
 .pill .dot { width: 0.65em; height: 0.65em; border-radius: 50%; background: var(--faint); flex: none; }
-.pill .phase { font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.82em; }
+.pill .phase { font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.82em; flex: none; }
 .pill .msg { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.pill.idle .dot { background: var(--faint); }
 .pill.running .dot { background: var(--cyan); animation: pulse 1.2s infinite; }
-.pill.done .dot { background: var(--green); }
-.pill.done { border-color: var(--green); }
-.pill.withheld .dot { background: var(--amber); }
-.pill.withheld { border-color: var(--amber); }
-.pill.error .dot { background: var(--red); }
-.pill.error { border-color: var(--red); }
+.pill.running { border-color: var(--cyan); }
+.pill.done .dot { background: var(--green); } .pill.done { border-color: var(--green); }
+.pill.withheld .dot { background: var(--amber); } .pill.withheld { border-color: var(--amber); }
+.pill.error .dot { background: var(--red); } .pill.error { border-color: var(--red); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-.chip {
-  display: inline-flex; align-items: center; gap: 0.4em; padding: 0.3em 0.6em;
-  border-radius: 6px; border: 1px solid var(--border-2); background: var(--bg);
-  font-size: 0.82em; color: var(--text-2); white-space: nowrap; flex: none;
-}
+.chip { display: inline-flex; align-items: center; gap: 0.4em; padding: 0.3em 0.6em; border-radius: 6px; border: 1px solid var(--border-2); background: var(--bg); font-size: 0.82em; color: var(--text-2); white-space: nowrap; flex: none; }
 .chip .mono { font-family: var(--mono); }
-.chip .local { color: var(--green); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85em; }
-.reconnect { display: none; color: var(--amber); font-size: 0.82em; }
+.chip .local { color: var(--green); font-weight: 700; letter-spacing: 0.08em; font-size: 0.85em; }
+.reconnect { display: none; color: var(--amber); font-size: 0.82em; white-space: nowrap; flex: none; }
 .reconnect.on { display: inline; }
 
 /* ---------- main grid ---------- */
-.main {
-  display: grid; grid-template-columns: minmax(0, 64fr) minmax(0, 36fr);
-  gap: var(--gap); padding: var(--gap); min-height: 0; min-width: 0;
-}
-.left { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 27%); gap: var(--gap); min-height: 0; min-width: 0; }
-.right {
-  display: grid; min-height: 0; min-width: 0; gap: var(--gap);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1.45fr) minmax(0, 1fr) auto auto minmax(0, 0.9fr);
-}
-.panel {
-  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;
-}
+.main { display: grid; grid-template-columns: minmax(0, 62fr) minmax(0, 38fr); gap: var(--gap); padding: var(--gap); min-height: 0; min-width: 0; }
+.left { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 29%); gap: var(--gap); min-height: 0; min-width: 0; }
+.right { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
 .panel > header {
-  display: flex; align-items: center; gap: 0.6em; flex: none;
-  padding: 0.35em 0.7em; border-bottom: 1px solid var(--border);
-  font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600;
+  display: flex; align-items: center; gap: 0.6em; flex: none; padding: 0.35em 0.7em; border-bottom: 1px solid var(--border);
+  font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; min-width: 0; white-space: nowrap;
 }
-.panel > header .right-slot { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+.panel > header > span:first-child { flex: none; }
+.panel > header .right-slot { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .panel > .body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5em 0.7em; }
 .panel > .body.tight { padding: 0; }
 
-/* ---------- viewport ---------- */
-.viewport { position: relative; background: #05080f; overflow: hidden; }
-.viewport img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
-.viewport img[src=""] , .viewport img:not([src]) { visibility: hidden; }
+/* ---------- main view ---------- */
+.mainview { position: relative; background: #05080f; }
+.view { position: absolute; inset: 0; display: none; }
+.mainview[data-view="camera"] .view.camera { display: block; }
+.mainview[data-view="map"] .view.map { display: block; }
+.view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.view img:not([src]) { visibility: hidden; }
+.view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .placeholder {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 0.6em;
-  color: var(--muted); font-size: 1.3em; letter-spacing: 0.06em;
+  color: var(--muted); font-size: 1.3em; letter-spacing: 0.06em; text-align: center; padding: 1em;
   background-image: linear-gradient(rgba(56,189,248,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.07) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 .placeholder small { font-size: 0.65em; color: var(--faint); letter-spacing: 0.02em; }
-.viewport.has-frame .placeholder { display: none; }
+.view.has-frame .placeholder, .view.has-map .placeholder { display: none; }
 .overlay { position: absolute; pointer-events: none; }
-.runlabel {
-  top: 0.8em; left: 0.8em; padding: 0.4em 0.8em; border-radius: 6px;
-  font-weight: 700; letter-spacing: 0.1em; font-size: 0.95em; text-transform: uppercase;
-  border: 1px solid; background: rgba(5,8,15,0.75); display: none;
-}
+.runlabel { top: 0.8em; left: 0.8em; padding: 0.4em 0.8em; border-radius: 6px; font-weight: 700; letter-spacing: 0.1em; font-size: 0.95em; text-transform: uppercase; border: 1px solid; background: rgba(5,8,15,0.78); display: none; z-index: 2; }
 .runlabel.raw { display: block; color: var(--red); border-color: var(--red); }
 .runlabel.guarded { display: block; color: var(--green); border-color: var(--green); }
 .runlabel.sandbox_replay { display: block; color: var(--amber); border-color: var(--amber); }
-.hud {
-  left: 0.8em; bottom: 0.8em; background: rgba(5,8,15,0.78); border: 1px solid var(--border-2);
-  border-radius: 8px; padding: 0.5em 0.8em; display: grid; grid-template-columns: auto auto auto auto auto; gap: 0.3em 1.4em;
-  font-variant-numeric: tabular-nums;
-}
-.hud .k { color: var(--muted); font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.1em; }
-.hud .v { font-size: 1.55em; font-weight: 700; line-height: 1.05; }
+.hud { left: 0.8em; bottom: 0.8em; background: rgba(5,8,15,0.8); border: 1px solid var(--border-2); border-radius: 8px; padding: 0.5em 0.8em; display: grid; grid-auto-flow: column; gap: 0.3em 1.3em; font-variant-numeric: tabular-nums; max-width: calc(100% - 1.6em); }
+.hud .k { color: var(--muted); font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.hud .k small { text-transform: none; letter-spacing: 0; color: var(--faint); }
+.hud .v { font-size: 1.55em; font-weight: 700; line-height: 1.05; white-space: nowrap; }
 .hud .v small { font-size: 0.5em; color: var(--muted); font-weight: 500; margin-left: 0.2em; }
-.hud .v.bad { color: var(--red); }
-.hud .v.ok { color: var(--green); }
-.hud .v.warn { color: var(--amber); }
-.hud .phase { font-size: 1.1em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cyan); }
-.legend {
-  right: 0.8em; bottom: 0.8em; background: rgba(5,8,15,0.78); border: 1px solid var(--border-2);
-  border-radius: 8px; padding: 0.45em 0.8em; display: flex; flex-direction: column; gap: 0.3em; font-size: 0.9em;
-}
-.legend span { display: flex; align-items: center; gap: 0.5em; }
-.legend i { width: 0.9em; height: 0.9em; border-radius: 3px; display: inline-block; }
-.labels { inset: 0; }
-.lbl {
-  position: absolute; transform: translate(-50%, -100%); margin-top: -10px;
-  font-size: 0.85em; font-weight: 600; padding: 0.15em 0.5em; border-radius: 4px; white-space: nowrap;
-  background: rgba(5,8,15,0.8); border: 1px solid; color: var(--text);
-}
-.lbl::after {
-  content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 10px; background: currentColor; transform: translateX(-50%);
-}
-.lbl::before {
-  content: ""; position: absolute; left: 50%; top: calc(100% + 8px); width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor; transform: translateX(-50%);
-}
-.banner {
-  position: absolute; left: 0; right: 0; top: 0; padding: 0.45em 1em; text-align: center; font-weight: 700;
-  letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.9em; display: none; z-index: 3;
-}
+.hud .v.bad { color: var(--red); } .hud .v.ok { color: var(--green); } .hud .v.warn { color: var(--amber); }
+.hud .phase { font-size: 1.1em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cyan); line-height: 1.5; }
+.hud.col { left: auto; right: 0.8em; grid-auto-flow: row; gap: 0.45em 0; min-width: 9.5em; }
+.legend { right: 0.8em; bottom: 0.8em; background: rgba(5,8,15,0.8); border: 1px solid var(--border-2); border-radius: 8px; padding: 0.45em 0.8em; display: flex; flex-direction: column; gap: 0.3em; font-size: 0.9em; }
+.legend span { display: flex; align-items: center; gap: 0.5em; white-space: nowrap; }
+.legend i { width: 0.9em; height: 0.9em; border-radius: 3px; display: inline-block; flex: none; }
+.caption { right: 0.8em; top: 0.8em; color: var(--muted); font-size: 0.82em; background: rgba(5,8,15,0.7); border: 1px solid var(--border); border-radius: 6px; padding: 0.3em 0.6em; }
+.labels { inset: 0; overflow: hidden; }
+.lbl { position: absolute; transform: translate(-50%, -100%); margin-top: -10px; font-size: 0.85em; font-weight: 600; padding: 0.15em 0.5em; border-radius: 4px; white-space: nowrap; background: rgba(5,8,15,0.82); border: 1px solid; color: var(--text); }
+.lbl::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 10px; background: currentColor; transform: translateX(-50%); }
+.lbl::before { content: ""; position: absolute; left: 50%; top: calc(100% + 8px); width: 6px; height: 6px; border-radius: 50%; background: currentColor; transform: translateX(-50%); }
+.banner { position: absolute; left: 0; right: 0; top: 0; padding: 0.45em 1em; text-align: center; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.9em; display: none; z-index: 4; }
 .banner.on { display: block; }
 .banner.recorded { background: rgba(251,191,36,0.92); color: #111; }
-.banner.error { background: rgba(248,113,113,0.92); color: #fff; text-transform: none; letter-spacing: 0; }
-.banner.error.on + .banner.recorded.on { top: 2.4em; }
-.toast {
-  position: fixed; left: 50%; top: 14%; transform: translateX(-50%); z-index: 20;
-  background: #1b2537; border: 1px solid var(--amber); color: var(--text); padding: 0.7em 1.2em; border-radius: 8px;
-  font-weight: 600; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-}
+.banner.error { background: rgba(248,113,113,0.94); color: #fff; text-transform: none; letter-spacing: 0; }
+.banner.error.on ~ .banner.recorded.on { top: 2.4em; }
+.toast { position: fixed; left: 50%; top: 14%; transform: translateX(-50%); z-index: 20; background: #1b2537; border: 1px solid var(--amber); color: var(--text); padding: 0.7em 1.2em; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 .toast.on { display: block; }
 
-/* ---------- bottom row ---------- */
-.bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1.15fr); gap: var(--gap); min-height: 0; min-width: 0; }
-.closeup { position: relative; background: #05080f; flex: 1; min-height: 0; }
-.closeup img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.closeup .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 0.9em; }
-.closeup.has-frame .ph { display: none; }
+/* ---------- secondary strip ---------- */
+.strip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--gap); min-height: 0; min-width: 0; }
+.sidebody { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 0.5em; padding: 0.45em 0.6em; }
+.sideimg { position: relative; background: #05080f; border-radius: 6px; overflow: hidden; min-height: 0; }
+.sideimg img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.sideimg img:not([src]) { visibility: hidden; }
+.sideimg .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 0.85em; text-align: center; padding: 0.5em; }
+.sideimg.has-frame .ph { display: none; }
+.sidestats { display: flex; flex-direction: column; gap: 0.3em; min-width: 0; min-height: 0; overflow: hidden; }
+.stat2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5em; }
+.stat .k { color: var(--muted); font-size: 0.76em; line-height: 1.15; min-height: 2.3em; display: flex; align-items: flex-end; }
+.stat .v { font-size: 1.5em; font-weight: 700; line-height: 1.1; white-space: nowrap; }
+.stat .v small { font-size: 0.5em; color: var(--muted); font-weight: 500; margin-left: 0.15em; }
+.stat .v.bad { color: var(--red); } .stat .v.ok { color: var(--green); } .stat .v.warn { color: var(--amber); }
+.conf { display: flex; align-items: flex-start; gap: 0.5em; min-width: 0; margin-top: 0.1em; }
+.conf .reason { color: var(--text-2); font-size: 0.82em; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .chartwrap { position: relative; flex: 1; min-height: 0; }
 .chartwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .chart-legend { display: flex; gap: 0.9em; margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-2); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 0.35em; }
 .chart-legend i { display: inline-block; width: 1.2em; height: 2px; border-radius: 1px; }
-.tip {
-  position: absolute; pointer-events: none; display: none; background: rgba(5,8,15,0.92); border: 1px solid var(--border-2);
-  border-radius: 6px; padding: 0.35em 0.6em; font-size: 0.85em; font-variant-numeric: tabular-nums; white-space: nowrap; z-index: 2;
-}
+.tip { position: absolute; pointer-events: none; display: none; background: rgba(5,8,15,0.92); border: 1px solid var(--border-2); border-radius: 6px; padding: 0.35em 0.6em; font-size: 0.85em; font-variant-numeric: tabular-nums; white-space: nowrap; z-index: 2; }
 .tip.on { display: block; }
 .tip b { font-weight: 700; }
 .tip .k { color: var(--muted); margin-left: 0.4em; }
-.floor { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0.3em; }
-.floor svg { width: 100%; height: 100%; }
 
-/* ---------- code / diff ---------- */
-pre.code {
-  margin: 0; font-family: var(--mono); font-size: 0.92em; line-height: 1.35; white-space: pre; color: var(--text-2);
-  padding: 0.5em 0.7em; min-height: 100%;
-}
-pre.code .caret { display: inline-block; width: 0.55em; height: 1em; background: var(--cyan); vertical-align: -0.15em; animation: pulse 0.8s infinite; }
-.empty { color: var(--faint); font-style: italic; padding: 0.5em 0.7em; }
-.diff { font-family: var(--mono); font-size: 0.9em; line-height: 1.35; padding: 0.3em 0; }
-.diff .ln { white-space: pre; padding: 0 0.7em; }
-.diff .ln.add { background: rgba(74,222,128,0.13); color: #bbf7d0; }
-.diff .ln.del { background: rgba(248,113,113,0.13); color: #fecaca; }
-.diff .ln.ctx { color: var(--faint); }
-.diff-summary { padding: 0.4em 0.7em; color: var(--text-2); border-top: 1px solid var(--border); font-size: 0.9em; }
-.diff-summary b { color: var(--amber); }
-.sectiontitle { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); padding: 0.4em 0.7em 0.2em; font-weight: 600; border-top: 1px solid var(--border); }
-
-/* ---------- guard report ---------- */
-.stage { padding: 0.4em 0.7em 0.6em; border-bottom: 1px solid var(--border); }
-.stage:last-child { border-bottom: none; }
-.stage-head { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.35em; }
-.stage-head .name { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; }
-.badge {
-  display: inline-block; padding: 0.2em 0.65em; border-radius: 5px; font-weight: 800; letter-spacing: 0.1em; font-size: 0.85em;
-  border: 1px solid; text-transform: uppercase;
-}
+/* ---------- guard message ---------- */
+.guardmsg { flex: none; border-left: 4px solid var(--border-2); }
+.guardmsg.green { border-left-color: var(--green); }
+.guardmsg.red { border-left-color: var(--red); }
+.guardmsg.amber { border-left-color: var(--amber); }
+.gtext { padding: 0.55em 0.85em 0.65em; font-size: 1.12em; line-height: 1.38; color: var(--text); max-height: 7.4em; overflow: auto; }
+.gtext.empty { color: var(--faint); font-style: italic; }
+.badge { display: inline-block; padding: 0.2em 0.65em; border-radius: 5px; font-weight: 800; letter-spacing: 0.1em; font-size: 0.85em; border: 1px solid; text-transform: uppercase; white-space: nowrap; }
 .badge.green { color: var(--green); border-color: var(--green); background: var(--green-bg); }
 .badge.red { color: var(--red); border-color: var(--red); background: var(--red-bg); }
 .badge.amber { color: var(--amber); border-color: var(--amber); background: var(--amber-bg); }
 .badge.grey { color: var(--muted); border-color: var(--border-2); background: transparent; }
-.summary { color: var(--text-2); margin-bottom: 0.4em; }
+.badge.small { font-size: 0.72em; padding: 0.15em 0.5em; }
+.panel > header .badge { font-size: 1em; }
+
+/* ---------- code panel ---------- */
+.code { flex: 1 1 auto; min-height: 6em; }
+.tabs { gap: 0.2em; padding: 0.25em 0.5em; }
+.tab { background: transparent; border: 0; color: var(--muted); padding: 0.3em 0.75em; border-radius: 5px; cursor: pointer; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; font-size: 1em; }
+.tab:hover { color: var(--text); background: #1b2537; }
+.tab.on { color: #fff; background: #0e7490; }
+pre.code { margin: 0; font-family: var(--mono); font-size: 0.92em; line-height: 1.38; white-space: pre; color: var(--text-2); padding: 0.5em 0.7em; min-height: 100%; }
+pre.code .caret { display: inline-block; width: 0.55em; height: 1em; background: var(--cyan); vertical-align: -0.15em; animation: pulse 0.8s infinite; }
+.empty { color: var(--faint); font-style: italic; padding: 0.6em 0.8em; }
+.diff { font-family: var(--mono); font-size: 0.92em; line-height: 1.38; padding: 0.3em 0; }
+.diff .ln { white-space: pre; padding: 0 0.7em; }
+.diff .ln.add { background: rgba(74,222,128,0.13); color: #bbf7d0; }
+.diff .ln.del { background: rgba(248,113,113,0.13); color: #fecaca; }
+.diff .ln.ctx { color: var(--faint); }
+.diff-summary { padding: 0.45em 0.7em; color: var(--text-2); border-bottom: 1px solid var(--border); font-size: 0.95em; }
+.diff-summary b { color: var(--amber); }
+.sectiontitle { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); padding: 0.45em 0.7em 0.2em; font-weight: 600; border-top: 1px solid var(--border); }
+.sectiontitle:first-child { border-top: 0; }
+details.sub { margin: 0.3em 0.7em 0.5em; }
+details.sub summary { color: var(--faint); font-size: 0.85em; cursor: pointer; }
+.ids { display: flex; flex-wrap: wrap; gap: 0.3em 1.1em; padding: 0.45em 0.7em; border-bottom: 1px solid var(--border); font-size: 0.88em; align-items: center; }
+.ids .kv { display: inline-flex; gap: 0.35em; align-items: baseline; }
+.ids .k { color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.8em; }
+.ids .v { font-family: var(--mono); color: var(--text-2); }
+.ids .match { font-weight: 700; display: inline-flex; gap: 0.35em; align-items: center; }
+.ids .match.ok { color: var(--green); } .ids .match.bad { color: var(--red); } .ids .match.pending { color: var(--faint); font-weight: 400; }
+.runchip { display: inline-block; padding: 0.05em 0.45em; border-radius: 4px; border: 1px solid; font-size: 0.78em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.runchip.raw { color: var(--red); border-color: var(--red); }
+.runchip.guarded { color: var(--green); border-color: var(--green); }
+.runchip.sandbox_replay { color: var(--amber); border-color: var(--amber); }
+.runchip.other { color: var(--muted); border-color: var(--border-2); }
 table.t { width: 100%; border-collapse: collapse; font-size: 0.9em; font-variant-numeric: tabular-nums; }
-table.t th { text-align: left; color: var(--faint); font-weight: 600; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.15em 0.4em; border-bottom: 1px solid var(--border); }
-table.t td { padding: 0.18em 0.4em; border-bottom: 1px solid rgba(31,41,55,0.6); }
-table.t td.num { white-space: nowrap; }
-table.t td.num, table.t th.num { text-align: right; }
+table.t th { text-align: left; color: var(--faint); font-weight: 600; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.08em; padding: 0.2em 0.5em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.t td { padding: 0.22em 0.5em; border-bottom: 1px solid rgba(31,41,55,0.6); vertical-align: top; }
+table.t td.num, table.t th.num { text-align: right; white-space: nowrap; }
+table.t td.mono { font-family: var(--mono); white-space: pre-wrap; word-break: break-word; }
 table.t tr.fail td { color: #fecaca; }
 table.t tr.pass td.ico { color: var(--green); }
 table.t tr.fail td.ico { color: var(--red); }
 table.t td.ico { font-weight: 800; text-align: center; width: 1.6em; }
-table.t.ens { font-size: 0.82em; margin-top: 0.4em; }
+table.t.ens { font-size: 0.82em; margin-top: 0.3em; }
 table.t.ens tr.v td { color: #fecaca; }
-.ens-title { font-size: 0.75em; color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.5em; }
-.riskline { display: flex; gap: 1.2em; color: var(--muted); font-size: 0.85em; margin-top: 0.35em; font-variant-numeric: tabular-nums; }
-.riskline b { color: var(--text-2); }
+table.t.skills td.seq { color: var(--faint); width: 2em; text-align: right; }
+table.t.skills td.res { color: var(--text-2); }
 
 /* ---------- results ---------- */
-.results { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); min-width: 0; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.5em 0.7em; min-width: 0; }
+.results { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); min-width: 0; flex: none; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.5em 0.7em 0.55em; min-width: 0; }
 .card.raw { border-top: 3px solid var(--red); }
 .card.guarded { border-top: 3px solid var(--green); }
 .card .head { display: flex; align-items: center; justify-content: space-between; gap: 0.5em; margin-bottom: 0.4em; min-width: 0; }
-.card .head .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card .title { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; }
-.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.3em 0.6em; }
-.metric .k { color: var(--faint); font-size: 0.68em; text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.1; min-height: 2.2em; display: flex; align-items: flex-end; }
-.metric .v { font-size: 1.3em; font-weight: 700; line-height: 1.1; white-space: nowrap; }
+.card .title { font-size: 0.76em; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; line-height: 1.15; min-width: 0; }
+.metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25em 0.6em; }
+.metric .k { color: var(--faint); font-size: 0.68em; text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.metric .v { font-size: 1.3em; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .metric .v small { font-size: 0.6em; color: var(--muted); font-weight: 500; }
-.metric .v.bad { color: var(--red); }
-.metric .v.ok { color: var(--green); }
-.metric .v.amber { color: var(--amber); }
-.note { color: var(--text-2); font-size: 0.88em; margin-top: 0.4em; min-height: 1.2em; }
-.withheld { color: var(--amber); font-weight: 600; font-size: 0.88em; margin-top: 0.3em; display: none; }
+.metric .v.bad { color: var(--red); } .metric .v.ok { color: var(--green); } .metric .v.amber { color: var(--amber); }
+.note { color: var(--text-2); font-size: 0.86em; margin-top: 0.4em; min-height: 1.2em; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.withheld { color: var(--amber); font-weight: 600; font-size: 0.86em; margin-top: 0.3em; display: none; }
 .withheld.on { display: block; }
 
-/* ---------- fairness ---------- */
-.fair { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; padding: 0.45em 0.7em; font-variant-numeric: tabular-nums; }
+/* ---------- technical details ---------- */
+details.tech { display: block; flex: none; }
+details.tech > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.6em; padding: 0.42em 0.7em; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; user-select: none; }
+details.tech > summary::-webkit-details-marker { display: none; }
+details.tech > summary::before { content: "\25B8"; color: var(--faint); font-size: 1.1em; }
+details.tech[open] > summary::before { content: "\25BE"; }
+details.tech[open] > summary { border-bottom: 1px solid var(--border); }
+details.tech > summary .right-slot { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+details.tech > summary:hover { color: var(--text); }
+.dbody { max-height: 30vh; overflow: auto; }
+.stage { padding: 0.4em 0.7em 0.6em; border-bottom: 1px solid var(--border); }
+.stage:last-child { border-bottom: none; }
+.stage-head { display: flex; align-items: center; gap: 0.7em; margin-bottom: 0.35em; }
+.stage-head .name { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; }
+.summary { color: var(--text-2); margin-bottom: 0.4em; }
+.ens-title { font-size: 0.75em; color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.5em; }
+.riskline { display: flex; gap: 1.2em; color: var(--muted); font-size: 0.85em; margin-top: 0.35em; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.riskline b { color: var(--text-2); }
+.fair { display: flex; align-items: center; gap: 0.6em 1em; flex-wrap: wrap; padding: 0.45em 0.7em; font-variant-numeric: tabular-nums; }
 .fair .kv { display: flex; gap: 0.4em; align-items: baseline; }
 .fair .k { color: var(--faint); font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.1em; }
 .fair .v { font-family: var(--mono); color: var(--text-2); }
 .fair .verdict { margin-left: auto; font-weight: 700; display: flex; align-items: center; gap: 0.4em; }
-.fair .verdict.ok { color: var(--green); }
-.fair .verdict.bad { color: var(--red); }
-.fair .verdict.pending { color: var(--faint); font-weight: 400; }
-
-/* ---------- timeline ---------- */
-.tl { font-variant-numeric: tabular-nums; font-size: 0.9em; }
+.fair .verdict.ok { color: var(--green); } .fair .verdict.bad { color: var(--red); } .fair .verdict.pending { color: var(--faint); font-weight: 400; }
+.tl { font-variant-numeric: tabular-nums; font-size: 0.9em; max-height: 11em; overflow: auto; }
 .tl .row { display: flex; gap: 0.7em; padding: 0.12em 0.7em; border-left: 3px solid transparent; }
 .tl .t { color: var(--faint); font-family: var(--mono); flex: none; }
 .tl .row.info { border-left-color: var(--faint); }
-.tl .row.ok { border-left-color: var(--green); }
-.tl .row.ok .x { color: #bbf7d0; }
-.tl .row.warn { border-left-color: var(--amber); }
-.tl .row.warn .x { color: #fde68a; }
-.tl .row.fail { border-left-color: var(--red); }
-.tl .row.fail .x { color: #fecaca; font-weight: 600; }
+.tl .row.ok { border-left-color: var(--green); } .tl .row.ok .x { color: #bbf7d0; }
+.tl .row.warn { border-left-color: var(--amber); } .tl .row.warn .x { color: #fde68a; }
+.tl .row.fail { border-left-color: var(--red); } .tl .row.fail .x { color: #fecaca; font-weight: 600; }
+.floor { display: flex; align-items: center; justify-content: center; padding: 0.3em 0.7em 0.6em; }
+.floor svg { width: 100%; max-height: 14em; }
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">
-    <h1>ModelRisk-Guard</h1>
-    <div class="sub">Runtime guard for LLM-written robot procedures · data-centre rack maintenance</div>
+  <div class="row">
+    <div class="brand">
+      <h1>ModelRisk-Guard</h1>
+      <div class="sub">Runtime guard for LLM-written robot procedures</div>
+    </div>
+    <div class="seg" id="missionSeg" role="tablist"></div>
+    <div class="setup" id="setup"></div>
+    <div class="spacer"></div>
+    <span class="reconnect" id="reconnect">reconnecting…</span>
+    <div class="pill idle" id="pill"><span class="dot"></span><span class="phase" id="pillPhase">idle</span><span class="msg" id="pillMsg">Ready</span></div>
+    <div class="chip" id="llmChip"><span>LLM</span><span class="mono" id="llmModel">—</span><span class="local">LOCAL</span></div>
   </div>
-  <div class="task">
-    <label for="task">Task</label>
-    <input id="task" type="text" spellcheck="false" value="Disengage the target optical transceiver in slot 1 without touching the neighbouring fibre cable, then reseat it.">
+  <div class="row">
+    <label class="tasklabel" for="task">Task</label>
+    <textarea id="task" rows="1" spellcheck="false" placeholder="Describe the task for the robot"></textarea>
+    <button class="btn primary" id="btnRun">Run</button>
+    <button class="btn" id="btnReset">Reset</button>
+    <button class="btn" id="btnReplay">Replay recorded run</button>
+    <button class="btn" id="btnFull">Fullscreen</button>
   </div>
-  <button class="btn primary" id="btnRun">Run Comparison</button>
-  <button class="btn" id="btnReset">Reset</button>
-  <button class="btn" id="btnReplay">Replay recorded run</button>
-  <button class="btn" id="btnFull">Fullscreen</button>
-  <div class="pill idle" id="pill"><span class="dot"></span><span class="phase" id="pillPhase">idle</span><span class="msg" id="pillMsg">Ready</span></div>
-  <span class="reconnect" id="reconnect">reconnecting…</span>
-  <div class="chip" id="llmChip"><span>LLM</span><span class="mono" id="llmModel">—</span><span class="local">local</span></div>
 </header>
 
 <main class="main">
   <section class="left">
-    <div class="panel viewport" id="viewport">
+    <div class="panel mainview" id="mainview" data-view="camera">
       <div class="banner error" id="errBanner"></div>
       <div class="banner recorded" id="recBanner"></div>
-      <img id="mainImg" alt="">
-      <div class="placeholder" id="placeholder"><div>Press Run Comparison</div><small>Raw LLM policy in the sandbox, then the guarded policy live</small></div>
-      <div class="overlay labels" id="labels"></div>
+      <div class="view camera" id="camView">
+        <img id="mainImg" alt="">
+        <div class="placeholder"><div>Press Run</div><small>Original procedure in the sandbox, then the guarded procedure live</small></div>
+        <div class="overlay labels" id="labels"></div>
+        <div class="overlay hud" id="hud">
+          <div><div class="k">Phase</div><div class="phase" id="hudPhase">—</div></div>
+          <div><div class="k">Displacement</div><div class="v" id="hudDisp">—<small>mm</small></div></div>
+          <div><div class="k">Cable force <small>· limit 20 N (configured simulation threshold)</small></div><div class="v" id="hudForce">—<small>N</small></div></div>
+          <div><div class="k">Simulator clearance</div><div class="v" id="hudClear">—<small>mm</small></div></div>
+          <div><div class="k">Peak force</div><div class="v" id="hudPeak">—<small>N</small></div></div>
+        </div>
+        <div class="overlay legend">
+          <span><i style="background:#38bdf8"></i>Target transceiver</span>
+          <span><i style="background:#fb923c"></i>Neighbouring fibre cable</span>
+          <span><i style="background:#f87171"></i>Gripper</span>
+        </div>
+      </div>
+      <div class="view map" id="mapView">
+        <canvas id="map"></canvas>
+        <div class="placeholder"><div>Press Run</div><small>The live map appears when the run starts</small></div>
+        <div class="overlay hud col" id="navHud">
+          <div><div class="k">Phase</div><div class="phase" id="navPhase">—</div></div>
+          <div><div class="k">Speed</div><div class="v" id="navSpeed">—<small>m/s</small></div></div>
+          <div><div class="k">LiDAR min</div><div class="v" id="navLidar">—<small>m</small></div></div>
+          <div><div class="k">Distance to target</div><div class="v" id="navDist">—<small>m</small></div></div>
+          <div><div class="k">Route</div><div class="phase" id="navRoute">—</div></div>
+        </div>
+        <div class="overlay caption" id="poseCaption">Pose: simulator ground truth</div>
+      </div>
       <div class="overlay runlabel" id="runLabel"></div>
-      <div class="overlay hud" id="hud">
-        <div><div class="k">Phase</div><div class="phase" id="hudPhase">—</div></div>
-        <div><div class="k">Displacement</div><div class="v" id="hudDisp">—<small>mm</small></div></div>
-        <div><div class="k">Cable force · limit 20.0 N</div><div class="v" id="hudForce">—<small>N</small></div></div>
-        <div><div class="k">Min clearance</div><div class="v" id="hudClear">—<small>mm</small></div></div>
-        <div><div class="k">Peak force</div><div class="v" id="hudPeak">—<small>N</small></div></div>
-      </div>
-      <div class="overlay legend">
-        <span><i style="background:#38bdf8"></i>Target transceiver</span>
-        <span><i style="background:#fb923c"></i>Neighbouring fibre cable</span>
-        <span><i style="background:#f87171"></i>Gripper</span>
-      </div>
     </div>
-    <div class="bottom">
+    <div class="strip">
       <div class="panel">
-        <header>Contact close-up</header>
-        <div class="closeup" id="closeup"><img id="closeupImg" alt=""><div class="ph">no close-up yet</div></div>
+        <header id="sideTitle">Wrist camera · RGB-D<span class="right-slot" id="sideMeta"></span></header>
+        <div class="sidebody">
+          <div class="sideimg" id="sideImgWrap"><img id="sideImg" alt=""><div class="ph" id="sidePh">no camera frame yet</div></div>
+          <div class="sidestats" id="sideStats"></div>
+        </div>
       </div>
       <div class="panel">
-        <header>Cable force &amp; clearance
-          <div class="chart-legend"><span><i style="background:var(--s-raw)"></i>raw</span><span><i style="background:var(--s-guarded)"></i>guarded</span><span><i style="background:var(--s-replay)"></i>replay</span></div>
+        <header><span id="chartTitle">Cable force &amp; simulator clearance</span>
+          <div class="chart-legend"><span><i style="background:var(--s-raw)"></i>original</span><span><i style="background:var(--s-guarded)"></i>guarded</span><span><i style="background:var(--s-replay)"></i>replay</span></div>
         </header>
         <div class="chartwrap" id="chartwrap"><canvas id="chart"></canvas><div class="tip" id="tip"></div></div>
-      </div>
-      <div class="panel">
-        <header>Data-centre floor plan<span class="right-slot">top-down · rows A–D</span></header>
-        <div class="floor" id="floor"></div>
       </div>
     </div>
   </section>
 
   <aside class="right">
-    <div class="panel">
-      <header>Generated procedure (original)<span class="right-slot" id="origSource"></span></header>
-      <div class="body tight" id="origBody"><div class="empty">Waiting for the local model…</div></div>
+    <div class="panel guardmsg" id="guardCard">
+      <header>Guard message<span class="badge grey" id="guardVerdict">—</span><span class="right-slot" id="guardStage"></span></header>
+      <div class="gtext empty" id="guardText">No guard verdict yet</div>
     </div>
-    <div class="panel">
-      <header>Guard report<span class="right-slot" id="guardMeta"></span></header>
-      <div class="body tight" id="guardBody"><div class="empty">No guard decision yet.</div></div>
-    </div>
-    <div class="panel">
-      <header>Revised procedure<span class="right-slot" id="revSource"></span></header>
-      <div class="body tight" id="revBody"><div class="empty">No revision yet.</div></div>
+    <div class="panel code">
+      <header class="tabs">
+        <button class="tab on" data-tab="original">Original</button>
+        <button class="tab" data-tab="revision">Revision</button>
+        <button class="tab" data-tab="skills">Executed skills</button>
+        <span class="right-slot" id="codeMeta"></span>
+      </header>
+      <div class="body tight" id="paneOriginal"></div>
+      <div class="body tight" id="paneRevision" hidden></div>
+      <div class="body tight" id="paneSkills" hidden></div>
     </div>
     <div class="results">
       <div class="card raw" id="cardRaw">
-        <div class="head"><span class="title">Raw LLM policy · sandbox</span><span class="badge grey" id="rawBadge">—</span></div>
+        <div class="head"><span class="title">Original procedure · sandbox</span><span class="badge grey" id="rawBadge">—</span></div>
         <div class="metrics" id="rawMetrics"></div>
-        <div class="withheld" id="rawWithheld">Motion withheld by the guard, robot did not move</div>
+        <div class="withheld" id="rawWithheld">Robot did not move (guard held motion)</div>
         <div class="note" id="rawNote"></div>
       </div>
       <div class="card guarded" id="cardGuarded">
-        <div class="head"><span class="title">Guarded LLM policy · live</span><span class="badge grey" id="guardedBadge">—</span></div>
+        <div class="head"><span class="title">Guarded procedure · live</span><span class="badge grey" id="guardedBadge">—</span></div>
         <div class="metrics" id="guardedMetrics"></div>
-        <div class="withheld" id="guardedWithheld">Motion withheld by the guard, robot did not move</div>
+        <div class="withheld" id="guardedWithheld">Robot did not move (guard held motion)</div>
         <div class="note" id="guardedNote"></div>
       </div>
     </div>
-    <div class="panel">
-      <header>Fairness</header>
-      <div class="fair" id="fair"></div>
-    </div>
-    <div class="panel">
-      <header>Event timeline<span class="right-slot" id="tlCount"></span></header>
-      <div class="body tight tl" id="tl"></div>
-    </div>
+    <details class="panel tech" id="tech">
+      <summary>Technical details<span class="right-slot" id="techMeta">guard checks · ensemble · fairness · timeline</span></summary>
+      <div class="dbody">
+        <div class="sectiontitle">Guard checks &amp; ensemble</div>
+        <div id="guardBody"></div>
+        <div class="sectiontitle">Fairness</div>
+        <div class="fair" id="fair"></div>
+        <div class="sectiontitle">Event timeline <span id="tlCount"></span></div>
+        <div class="tl" id="tl"></div>
+        <div id="floorSection">
+          <div class="sectiontitle">Data-centre floor plan · top-down · rows A–D</div>
+          <div class="floor" id="floor"></div>
+        </div>
+      </div>
+    </details>
   </aside>
 </main>
 <div class="toast" id="toast"></div>
@@ -406,18 +419,36 @@ table.t.ens tr.v td { color: #fecaca; }
 (function () {
 'use strict';
 var $ = function (id) { return document.getElementById(id); };
-var MOCK = /[?&]mock=1/.test(location.search);
-var STATIC = /[?&]static=1/.test(location.search);  /* render the snapshot only (screenshots) */
+var Q = location.search;
+var MOCK = /[?&]mock=1/.test(Q);
+var STATIC = /[?&]static=1/.test(Q);           /* render the snapshot only (screenshots) */
+var QMISSION = (Q.match(/[?&]mission=([a-z_]+)/) || [])[1] || '';
 var FORCE_LIMIT = 20.0;
 var RUNNING = { generating: 1, raw_run: 1, guard_check: 1, patching: 1, guard_recheck: 1, guarded_run: 1, sandbox_replay: 1 };
-var RUN_LABELS = { raw: 'RAW LLM POLICY · SANDBOX', guarded: 'GUARDED LLM POLICY · LIVE', sandbox_replay: 'SANDBOX REPLAY · REJECTED REVISION' };
+var RUN_LABELS = { raw: 'ORIGINAL PROCEDURE · SANDBOX', guarded: 'GUARDED PROCEDURE · LIVE', sandbox_replay: 'SANDBOX REPLAY · REJECTED REVISION' };
+var SERIES_COLORS = { raw: '#e34948', guarded: '#1baf7a', sandbox_replay: '#c98500' };
+var FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+/* ---------- missions ---------- */
+var DEFAULT_MISSIONS = [
+  { id: 'transceiver', title: 'Transceiver reseat', main_view: 'camera',
+    prompt: 'Disengage the target optical transceiver in slot 1 without touching the neighbouring fibre cable, then reseat it.',
+    setup: [{ key: 'cable_shift_mm', label: 'Move cable toward the gripper (mm)', type: 'number', 'default': 0, min: 0, max: 25, step: 1 },
+            { key: 'camera_occluded', label: 'Occlude the wrist camera', type: 'bool', 'default': false }] },
+  { id: 'navigation', title: 'Rack navigation', main_view: 'map',
+    prompt: 'Go to Rack A and inspect it.',
+    setup: [{ key: 'obstacle', label: 'Move the maintenance cart into the aisle', type: 'bool', 'default': false }] }
+];
+var MISSIONS = DEFAULT_MISSIONS.slice();
+var UI = { mission: 'transceiver', tab: 'original', taskEdited: false };
 
 function freshState() {
   return {
-    task: '', phase: 'idle', status_message: '', original_code: '', revised_code: '',
-    original_source: '', revised_source: '', streaming: { original: false, revised: false },
-    diff_lines: [], diff_summary: '', guard_initial: null, guard_revised: null,
-    result_raw: null, result_guarded: null, fairness: null, timeline: [],
+    mission: null, setup: null, task: '', phase: 'idle', status_message: '',
+    original_code: '', revised_code: '', original_source: '', revised_source: '', streaming: { original: false, revised: false },
+    diff_lines: [], diff_summary: '', guard_initial: null, guard_revised: null, guard_message: null,
+    result_raw: null, result_guarded: null, fairness: null, policy_ids: null, skill_calls: [],
+    camera: null, map: null, nav: null, trails: {}, blocked: [], timeline: [],
     last_frame: { main: null, closeup: null }, recorded: false, recorded_at: null,
     llm: null, series: [], error: null, done: null
   };
@@ -428,48 +459,137 @@ var S = freshState();
 function isNum(v) { return typeof v === 'number' && isFinite(v); }
 function fmt(v, d) { return isNum(v) ? v.toFixed(d == null ? 1 : d) : (v == null || v === '' ? '—' : String(v)); }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
 function mmss(t) { if (!isNum(t)) return '--:--.-'; var m = Math.floor(t / 60), s = t - m * 60; return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s.toFixed(1); }
 function short(h, n) { return typeof h === 'string' && h ? h.slice(0, n || 10) : '—'; }
 function yesno(v) { return v === true ? 'yes' : v === false ? 'no' : '—'; }
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function bodyFont() { return parseFloat(getComputedStyle(document.body).fontSize) || 12; }
+function runClass(run) { return run === 'raw' || run === 'guarded' || run === 'sandbox_replay' ? run : 'other'; }
+function missionById(id) { for (var i = 0; i < MISSIONS.length; i++) if (MISSIONS[i] && MISSIONS[i].id === id) return MISSIONS[i]; return null; }
+function currentMission() { return missionById(UI.mission) || MISSIONS[0] || DEFAULT_MISSIONS[0]; }
+function mainView() { var m = currentMission(); return m && m.main_view === 'map' ? 'map' : 'camera'; }
+function isNavMission() { return mainView() === 'map'; }
+
+/* ---------- top bar: mission switch, setup, task ---------- */
+function renderMissionSeg() {
+  var seg = $('missionSeg'); clear(seg);
+  MISSIONS.forEach(function (m) {
+    if (!m || !m.id) return;
+    var b = el('button', m.id === UI.mission ? 'on' : '', m.title || m.id);
+    b.type = 'button'; b.setAttribute('role', 'tab'); b.dataset.id = m.id;
+    b.addEventListener('click', function () { selectMission(m.id, true); });
+    seg.appendChild(b);
+  });
+}
+function selectMission(id, byUser) {
+  var m = missionById(id); if (!m) return;
+  var changed = UI.mission !== id;
+  UI.mission = id;
+  if (byUser && MOCK) { mockStop(); resetUI(); }
+  if (byUser || !UI.taskEdited) { setTaskText(m.prompt || ''); UI.taskEdited = false; }
+  renderMissionSeg(); renderSetup(); applyView();
+  if (changed || byUser) renderAll();
+}
+function renderSetup() {
+  var m = currentMission(), box = $('setup'); clear(box);
+  var schema = Array.isArray(m.setup) ? m.setup : [];
+  var vals = (S.mission === m.id && S.setup && typeof S.setup === 'object') ? S.setup : {};
+  schema.forEach(function (f) {
+    if (!f || !f.key) return;
+    var lab = el('label'), inp = el('input');
+    inp.dataset.key = f.key; inp.dataset.type = f.type === 'bool' ? 'bool' : 'number';
+    var v = Object.prototype.hasOwnProperty.call(vals, f.key) ? vals[f.key] : f['default'];
+    lab.title = f.label || f.key;
+    if (f.type === 'bool') {
+      inp.type = 'checkbox'; inp.checked = !!v;
+      lab.appendChild(inp); lab.appendChild(el('span', null, f.label || f.key));
+    } else {
+      inp.type = 'number';
+      if (isNum(f.min)) inp.min = f.min; if (isNum(f.max)) inp.max = f.max; if (isNum(f.step)) inp.step = f.step;
+      inp.value = isNum(v) ? v : (isNum(f['default']) ? f['default'] : 0);
+      lab.appendChild(el('span', null, f.label || f.key)); lab.appendChild(inp);
+    }
+    box.appendChild(lab);
+  });
+}
+function getSetupValues() {
+  var out = {};
+  Array.prototype.forEach.call($('setup').querySelectorAll('input'), function (inp) {
+    var k = inp.dataset.key; if (!k) return;
+    out[k] = inp.dataset.type === 'bool' ? !!inp.checked : (inp.value === '' ? null : Number(inp.value));
+  });
+  return out;
+}
+function autosizeTask() { var ta = $('task'); ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, bodyFont() * 5) + 'px'; }
+function setTaskText(text) { var ta = $('task'); if (document.activeElement === ta) return; ta.value = text || ''; autosizeTask(); }
+$('task').addEventListener('input', function () { UI.taskEdited = true; autosizeTask(); });
+function applyView() {
+  var v = mainView();
+  $('mainview').dataset.view = v;
+  $('sideTitle').firstChild.textContent = v === 'map' ? 'Follow camera · MuJoCo' : 'Wrist camera · RGB-D';
+  $('sidePh').textContent = v === 'map' ? 'no camera frame yet' : 'no wrist-camera frame yet';
+  $('chartTitle').textContent = v === 'map' ? 'LiDAR min & distance to target' : 'Cable force & simulator clearance';
+  $('floorSection').hidden = v === 'map';
+  $('techMeta').textContent = v === 'map' ? 'guard checks · rollout · fairness · timeline' : 'guard checks · ensemble · fairness · timeline · floor plan';
+}
 
 /* ---------- status pill / buttons ---------- */
 function renderStatus() {
   var pill = $('pill'), ph = S.phase || 'idle';
-  pill.className = 'pill ' + (ph === 'done' ? 'done' : ph === 'withheld' ? 'withheld' : ph === 'error' ? 'error' : RUNNING[ph] ? 'running' : 'idle');
+  pill.className = 'pill ' + ((ph === 'done') ? 'done' : (ph === 'withheld' || ph === 'held') ? 'withheld' : ph === 'error' ? 'error' : RUNNING[ph] ? 'running' : 'idle');
   $('pillPhase').textContent = ph.replace(/_/g, ' ');
   var msg = S.status_message || (ph === 'idle' ? 'Ready' : '');
-  if (ph === 'done' && S.done && S.done.summary) msg = S.done.summary;
-  $('pillMsg').textContent = msg;
-  $('pillMsg').title = msg;
+  if ((ph === 'done' || ph === 'withheld' || ph === 'held') && S.done && S.done.summary) msg = S.done.summary;
+  $('pillMsg').textContent = msg; $('pillMsg').title = msg; pill.title = ph + (msg ? ' · ' + msg : '');
   $('btnRun').disabled = !!RUNNING[ph];
   $('btnReplay').disabled = !!RUNNING[ph];
   if (S.llm && S.llm.model) $('llmModel').textContent = S.llm.model;
 }
 
-/* ---------- code blocks ---------- */
-function renderCode(target) {
-  var body = target === 'original' ? $('origBody') : $('revBody');
-  var code = target === 'original' ? S.original_code : S.revised_code;
-  var src = target === 'original' ? S.original_source : S.revised_source;
-  var srcEl = target === 'original' ? $('origSource') : $('revSource');
-  srcEl.textContent = src ? 'source: ' + src : (S.streaming[target] ? 'streaming…' : '');
-  clear(body);
-  if (!code) {
-    if (target === 'revised' && S.diff_lines.length) { renderDiffInto(body); return; }
-    body.appendChild(el('div', 'empty', target === 'original' ? 'Waiting for the local model…' : 'No revision yet.'));
-    return;
+/* ---------- guard message ---------- */
+function verdictClass(v) {
+  return v === 'APPROVED' ? 'green' : (v === 'INTERCEPTED' || v === 'REJECTED' || v === 'BLOCKED') ? 'red' : (v === 'HELD' || v === 'WITHHELD') ? 'amber' : 'grey';
+}
+function renderGuardMessage() {
+  var g = S.guard_message, card = $('guardCard'), badge = $('guardVerdict'), txt = $('guardText');
+  if (!g || (!g.text && !g.verdict)) {
+    card.className = 'panel guardmsg'; badge.className = 'badge grey'; badge.textContent = '—'; $('guardStage').textContent = '';
+    txt.className = 'gtext empty'; txt.textContent = 'No guard verdict yet'; return;
   }
-  var pre = el('pre', 'code', code);
-  if (S.streaming[target]) pre.appendChild(el('span', 'caret'));
+  var cls = verdictClass(g.verdict);
+  card.className = 'panel guardmsg ' + cls; badge.className = 'badge ' + cls; badge.textContent = g.verdict || '—';
+  $('guardStage').textContent = g.stage ? ('stage: ' + g.stage) : '';
+  txt.className = 'gtext'; txt.textContent = g.text || '';
+}
+
+/* ---------- code panel (tabs) ---------- */
+function setTab(name) {
+  if (name !== 'original' && name !== 'revision' && name !== 'skills') return;
+  UI.tab = name;
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) { b.className = 'tab' + (b.dataset.tab === name ? ' on' : ''); });
+  $('paneOriginal').hidden = name !== 'original'; $('paneRevision').hidden = name !== 'revision'; $('paneSkills').hidden = name !== 'skills';
+  renderCodeMeta();
+}
+Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) { b.addEventListener('click', function () { setTab(b.dataset.tab); }); });
+function renderCodeMeta() {
+  var m = '';
+  if (UI.tab === 'original') m = S.original_source ? 'source: ' + S.original_source : (S.streaming.original ? 'streaming…' : '');
+  else if (UI.tab === 'revision') m = S.revised_source ? 'source: ' + S.revised_source : (S.streaming.revised ? 'streaming…' : '');
+  else m = S.skill_calls.length ? S.skill_calls.length + ' calls' : '';
+  $('codeMeta').textContent = m;
+}
+function renderOriginal() {
+  var body = $('paneOriginal'); clear(body);
+  if (!S.original_code) { body.appendChild(el('div', 'empty', S.phase === 'generating' ? 'Waiting for the local model…' : 'No procedure yet. Press Run to ask the local model.')); renderCodeMeta(); return; }
+  var pre = el('pre', 'code', S.original_code);
+  if (S.streaming.original) pre.appendChild(el('span', 'caret'));
   body.appendChild(pre);
-  if (target === 'revised' && S.diff_lines.length) {
-    body.appendChild(el('div', 'sectiontitle', 'Line diff vs original'));
-    renderDiffInto(body);
-  }
-  if (S.streaming[target]) body.scrollTop = body.scrollHeight;
+  if (S.streaming.original) body.scrollTop = body.scrollHeight;
+  renderCodeMeta();
 }
 function renderDiffInto(body) {
+  if (S.diff_summary) { var s = el('div', 'diff-summary'); s.appendChild(el('span', null, 'Revision: ')); s.appendChild(el('b', null, S.diff_summary)); body.appendChild(s); }
   var d = el('div', 'diff');
   S.diff_lines.forEach(function (l) {
     if (!l) return;
@@ -477,21 +597,71 @@ function renderDiffInto(body) {
     d.appendChild(el('div', 'ln ' + op, (l.op || ' ') + ' ' + (l.text == null ? '' : l.text)));
   });
   body.appendChild(d);
-  if (S.diff_summary) {
-    var s = el('div', 'diff-summary'); s.appendChild(el('span', null, 'Patch: ')); s.appendChild(el('b', null, S.diff_summary)); body.appendChild(s);
+}
+function renderRevision() {
+  var body = $('paneRevision'); clear(body);
+  if (S.diff_lines.length) {
+    renderDiffInto(body);
+    if (S.revised_code) { var dt = el('details', 'sub'), sm = el('summary', null, 'Full revised code'); dt.appendChild(sm); dt.appendChild(el('pre', 'code', S.revised_code)); body.appendChild(dt); }
+  } else if (S.revised_code) {
+    var pre = el('pre', 'code', S.revised_code);
+    if (S.streaming.revised) pre.appendChild(el('span', 'caret'));
+    body.appendChild(pre);
+    if (S.streaming.revised) body.scrollTop = body.scrollHeight;
+  } else if (S.done && S.done.outcome === 'original_passed') {
+    body.appendChild(el('div', 'empty', 'No revision: the original passed'));
+  } else {
+    body.appendChild(el('div', 'empty', S.phase === 'patching' ? 'The model is revising the procedure from the guard evidence…' : 'No revision yet.'));
   }
+  renderCodeMeta();
+}
+function argText(v) {
+  if (typeof v === 'number') return String(v);
+  if (v == null) return 'null';
+  if (typeof v === 'object') { try { return JSON.stringify(v); } catch (e) { return String(v); } }
+  return String(v);
+}
+function callText(sc) {
+  var args = sc && sc.args && typeof sc.args === 'object' ? sc.args : {}, parts = [];
+  Object.keys(args).forEach(function (k, i) { parts.push(i === 0 ? argText(args[k]) : k + '=' + argText(args[k])); });
+  return (sc && sc.skill ? sc.skill : '?') + '(' + parts.join(', ') + ')';
+}
+function renderSkills() {
+  var body = $('paneSkills'); clear(body);
+  var p = S.policy_ids, ids = el('div', 'ids');
+  function kv(k, v) { var d = el('div', 'kv'); d.appendChild(el('span', 'k', k)); d.appendChild(el('span', 'v', v)); ids.appendChild(d); }
+  kv('original', short(p && p.original_sha256, 10)); kv('approved', short(p && p.approved_sha256, 10)); kv('executed', short(p && p.executed_sha256, 10));
+  var m = el('span', 'match pending', 'policy ids: sha256 of the code text');
+  if (p && p.executed_matches_approved === true) { m.className = 'match ok'; m.textContent = '✓ executed code matches approved policy'; }
+  else if (p && p.executed_matches_approved === false) { m.className = 'match bad'; m.textContent = '⚠ executed code differs from the approved policy'; }
+  ids.appendChild(m); body.appendChild(ids);
+  if (!S.skill_calls.length) { body.appendChild(el('div', 'empty', 'No restricted skill has executed yet.')); renderCodeMeta(); return; }
+  var t = el('table', 't skills'), th = el('thead'), hr = el('tr');
+  ['#', 'Run', 'Skill call', 'Result'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+  th.appendChild(hr); t.appendChild(th);
+  var tb = el('tbody');
+  S.skill_calls.forEach(function (sc, i) {
+    if (!sc) return;
+    var tr = el('tr');
+    tr.appendChild(el('td', 'seq', isNum(sc.seq) ? String(sc.seq) : String(i + 1)));
+    var rc = el('td'); rc.appendChild(el('span', 'runchip ' + runClass(sc.run), sc.run === 'sandbox_replay' ? 'replay' : (sc.run === 'raw' ? 'original' : (sc.run || '—')))); tr.appendChild(rc);
+    var c = el('td', 'mono', callText(sc)); if (sc.policy_sha256) c.title = 'policy ' + short(sc.policy_sha256, 10) + (isNum(sc.step) ? ' · step ' + sc.step : ''); tr.appendChild(c);
+    tr.appendChild(el('td', 'res', sc.result == null ? '' : String(sc.result)));
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); body.appendChild(t);
+  body.scrollTop = body.scrollHeight;
+  renderCodeMeta();
 }
 
-/* ---------- guard report ---------- */
-function badgeClass(decision) {
-  return decision === 'APPROVED' ? 'green' : (decision === 'INTERCEPTED' || decision === 'REJECTED') ? 'red' : decision === 'WITHHELD' ? 'amber' : 'grey';
-}
+/* ---------- guard checks (technical details) ---------- */
 function cell(tr, text, cls) { var td = el('td', cls, text); tr.appendChild(td); return td; }
+function humanKey(k) { return String(k).replace(/_/g, ' '); }
+function anyText(v) { if (typeof v === 'boolean') return v ? 'yes' : 'no'; if (isNum(v)) return Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(Math.abs(v) < 10 ? 2 : 1); if (v == null) return '—'; if (typeof v === 'object') { try { return JSON.stringify(v); } catch (e) { return String(v); } } return String(v); }
 function renderGuardStage(g, name) {
-  var box = el('div', 'stage');
-  var head = el('div', 'stage-head');
+  var box = el('div', 'stage'), head = el('div', 'stage-head');
   head.appendChild(el('span', 'name', name));
-  head.appendChild(el('span', 'badge ' + badgeClass(g.decision), g.decision || '—'));
+  head.appendChild(el('span', 'badge ' + verdictClass(g.decision), g.decision || '—'));
   box.appendChild(head);
   if (g.summary) box.appendChild(el('div', 'summary', g.summary));
   if (Array.isArray(g.checks) && g.checks.length) {
@@ -504,22 +674,22 @@ function renderGuardStage(g, name) {
       var tr = el('tr', c.passed ? 'pass' : 'fail');
       cell(tr, c.passed ? '✓' : '✗', 'ico');
       var nm = cell(tr, c.name || '—'); if (c.detail) nm.title = c.detail;
-      cell(tr, fmt(c.measured, 1), 'num'); cell(tr, fmt(c.limit, 1), 'num'); cell(tr, c.unit || '');
+      cell(tr, anyText(c.measured), 'num'); cell(tr, anyText(c.limit), 'num'); cell(tr, c.unit || '');
       tb.appendChild(tr);
     });
     t.appendChild(tb); box.appendChild(t);
   }
   if (Array.isArray(g.ensemble) && g.ensemble.length) {
-    box.appendChild(el('div', 'ens-title', 'Perturbed sandbox ensemble · ' + g.ensemble.length + ' particles'));
+    var rows = g.ensemble.filter(function (p) { return p && typeof p === 'object'; }), keys = [];
+    rows.forEach(function (p) { Object.keys(p).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); }); });
+    box.appendChild(el('div', 'ens-title', (rows.length > 1 ? 'Perturbed sandbox ensemble · ' + rows.length + ' particles' : 'Sandbox rollout · 1 particle')));
     var e = el('table', 't ens'), eh = el('thead'), ehr = el('tr');
-    [['#', ''], ['Cable offset mm', 'num'], ['Friction', 'num'], ['Peak force N', 'num'], ['Min clearance mm', 'num'], ['Violated', '']].forEach(function (h) { ehr.appendChild(el('th', h[1], h[0])); });
+    keys.forEach(function (k) { ehr.appendChild(el('th', typeof rows[0][k] === 'number' ? 'num' : '', humanKey(k))); });
     eh.appendChild(ehr); e.appendChild(eh);
     var eb = el('tbody');
-    g.ensemble.forEach(function (p) {
-      if (!p) return;
-      var tr = el('tr', p.violated ? 'v' : '');
-      cell(tr, fmt(p.particle, 0)); cell(tr, fmt(p.cable_x_offset_mm, 1), 'num'); cell(tr, fmt(p.friction, 2), 'num');
-      cell(tr, fmt(p.peak_force_n, 1), 'num'); cell(tr, fmt(p.min_clearance_mm, 1), 'num'); cell(tr, p.violated ? 'yes' : 'no');
+    rows.forEach(function (p) {
+      var tr = el('tr', (p.violated === true || p.blocked === true) ? 'v' : '');
+      keys.forEach(function (k) { cell(tr, anyText(p[k]), typeof p[k] === 'number' ? 'num' : ''); });
       eb.appendChild(tr);
     });
     e.appendChild(eb); box.appendChild(e);
@@ -533,13 +703,10 @@ function renderGuardStage(g, name) {
   return box;
 }
 function renderGuard() {
-  var body = $('guardBody'); clear(body);
-  var n = 0;
+  var body = $('guardBody'); clear(body); var n = 0;
   if (S.guard_initial) { body.appendChild(renderGuardStage(S.guard_initial, 'Stage 1 · initial check')); n++; }
-  if (S.guard_revised) { body.appendChild(renderGuardStage(S.guard_revised, 'Stage 2 · revised policy re-check')); n++; }
+  if (S.guard_revised) { body.appendChild(renderGuardStage(S.guard_revised, 'Stage 2 · revised procedure re-check')); n++; }
   if (!n) body.appendChild(el('div', 'empty', 'No guard decision yet.'));
-  $('guardMeta').textContent = n === 2 ? 'initial + revised' : n === 1 ? 'initial' : '';
-  if (S.guard_revised && n === 2) { var st2 = body.querySelectorAll('.stage')[1]; body.scrollTop = st2 ? st2.offsetTop - body.offsetTop : 0; } else body.scrollTop = 0;
 }
 
 /* ---------- result cards ---------- */
@@ -547,42 +714,48 @@ function metric(parent, k, v, cls, unit) {
   var m = el('div', 'metric'); m.appendChild(el('div', 'k', k));
   var vv = el('div', 'v' + (cls ? ' ' + cls : ''), v); if (unit) vv.appendChild(el('small', null, ' ' + unit)); m.appendChild(vv); parent.appendChild(m);
 }
+function statusClass(st) { return st === 'COMPLETED' ? 'green' : (st === 'WITHHELD' || st === 'HELD') ? 'amber' : (st === 'FAILED' || st === 'BLOCKED') ? 'red' : 'grey'; }
 function renderResult(run) {
-  var r = run === 'raw' ? S.result_raw : S.result_guarded;
+  var r = run === 'raw' ? S.result_raw : S.result_guarded, nav = isNavMission();
   var badge = $(run + 'Badge'), met = $(run + 'Metrics'), note = $(run + 'Note'), wh = $(run + 'Withheld');
   clear(met);
   if (!r) {
     badge.className = 'badge grey'; badge.textContent = '—';
-    ['Task completed', 'Cable contact', 'Peak force', 'Min clearance', 'Max stroke', 'Final displacement'].forEach(function (k) { metric(met, k, '—'); });
-    note.textContent = ''; wh.className = 'withheld'; return;
+    (nav ? ['Arrived', 'Inspected', 'Blocked', 'Route'] : ['Task completed', 'Cable contact', 'Peak force', 'Min sim clearance']).forEach(function (k) { metric(met, k, '—'); });
+    note.textContent = ''; note.title = ''; wh.className = 'withheld'; return;
   }
   var st = r.status || '—';
-  badge.className = 'badge ' + (st === 'COMPLETED' ? 'green' : st === 'WITHHELD' ? 'amber' : (st === 'FAILED' || st === 'BLOCKED') ? 'red' : 'grey');
-  badge.textContent = st;
-  metric(met, 'Task completed', yesno(r.task_completed), r.task_completed === true ? 'ok' : r.task_completed === false ? 'bad' : '');
-  metric(met, 'Cable contact', yesno(r.cable_contact), r.cable_contact === true ? 'bad' : r.cable_contact === false ? 'ok' : '');
-  metric(met, 'Peak force', fmt(r.peak_force_n, 1), isNum(r.peak_force_n) ? (r.peak_force_n > FORCE_LIMIT ? 'bad' : 'ok') : '', 'N');
-  metric(met, 'Min clearance', fmt(r.min_clearance_mm, 1), isNum(r.min_clearance_mm) ? (r.min_clearance_mm < 0 ? 'bad' : 'ok') : '', 'mm');
-  metric(met, 'Max stroke', fmt(r.max_displacement_mm, 1), '', 'mm');
-  metric(met, 'Final displacement', fmt(r.final_displacement_mm, 1), '', 'mm');
-  wh.className = 'withheld' + (st === 'WITHHELD' ? ' on' : '');
-  note.textContent = r.note || '';
+  badge.className = 'badge ' + statusClass(st); badge.textContent = st;
+  if (nav) {
+    metric(met, 'Arrived', yesno(r.arrived), r.arrived === true ? 'ok' : r.arrived === false ? 'bad' : '');
+    metric(met, 'Inspected', yesno(r.inspected), r.inspected === true ? 'ok' : r.inspected === false ? 'bad' : '');
+    metric(met, 'Blocked', yesno(r.blocked), r.blocked === true ? 'bad' : r.blocked === false ? 'ok' : '');
+    metric(met, 'Route', r.route_id ? String(r.route_id) : '—', '');
+  } else {
+    metric(met, 'Task completed', yesno(r.task_completed), r.task_completed === true ? 'ok' : r.task_completed === false ? 'bad' : '');
+    metric(met, 'Cable contact', yesno(r.cable_contact), r.cable_contact === true ? 'bad' : r.cable_contact === false ? 'ok' : '');
+    metric(met, 'Peak force', fmt(r.peak_force_n, 1), isNum(r.peak_force_n) ? (r.peak_force_n > FORCE_LIMIT ? 'bad' : 'ok') : '', 'N');
+    metric(met, 'Min sim clearance', fmt(r.min_clearance_mm, 1), isNum(r.min_clearance_mm) ? (r.min_clearance_mm < 0 ? 'bad' : 'ok') : '', 'mm');
+  }
+  wh.className = 'withheld' + ((st === 'WITHHELD' || st === 'HELD') ? ' on' : '');
+  note.textContent = r.note || ''; note.title = r.note || '';
 }
 
 /* ---------- fairness ---------- */
 function renderFairness() {
   var f = S.fairness, box = $('fair'); clear(box);
   function kv(k, v) { var d = el('div', 'kv'); d.appendChild(el('span', 'k', k)); d.appendChild(el('span', 'v', v)); box.appendChild(d); }
-  if (!f) {
-    kv('seed', '—'); kv('policy', '—'); kv('state', '—');
-    box.appendChild(el('div', 'verdict pending', 'awaiting run')); return;
-  }
+  if (!f) { kv('seed', '—'); kv('policy', '—'); kv('state', '—'); box.appendChild(el('div', 'verdict pending', 'awaiting run')); return; }
   kv('seed', f.seed == null ? '—' : String(f.seed));
   kv('policy sha', short(f.policy_sha256, 10));
   kv('state sha', short(f.initial_state_sha256, 10));
   if (isNum(f.cable_x_mm)) kv('cable x', fmt(f.cable_x_mm, 1) + ' mm');
-  var v = el('div', 'verdict ' + (f.identical === false ? 'bad' : 'ok'));
-  v.textContent = f.identical === false ? '⚠ initial state or policy differ between runs' : '✓ identical initial state and policy';
+  if (f.setup && typeof f.setup === 'object') {
+    var parts = Object.keys(f.setup).map(function (k) { return k + '=' + anyText(f.setup[k]); });
+    kv('setup', parts.length ? parts.join(', ') : 'none');
+  }
+  var v = el('div', 'verdict ' + (f.identical === false ? 'bad' : f.identical === true ? 'ok' : 'pending'));
+  v.textContent = f.identical === false ? '⚠ initial state or policy differ between runs' : f.identical === true ? '✓ identical initial state and policy' : 'identity not reported';
   if (f.note) v.title = f.note;
   box.appendChild(v);
 }
@@ -595,38 +768,31 @@ function appendTimelineRow(e) {
 function renderTimeline() {
   var tl = $('tl'); clear(tl);
   S.timeline.forEach(function (e) { if (e) appendTimelineRow(e); });
-  $('tlCount').textContent = S.timeline.length ? S.timeline.length + ' events' : '';
+  $('tlCount').textContent = S.timeline.length ? '· ' + S.timeline.length + ' events' : '';
   tl.scrollTop = tl.scrollHeight;
 }
 
-/* ---------- HUD / frames ---------- */
-function setNum(id, v, d, cls) {
+/* ---------- main view: run label, camera HUD, labels ---------- */
+function setRunLabel(run, predicted) {
+  var rl = $('runLabel');
+  rl.className = 'overlay runlabel' + (RUN_LABELS[run] ? ' ' + run : '');
+  if (predicted && RUN_LABELS[run]) rl.textContent = 'SANDBOX ROLLOUT · ' + (run === 'raw' ? 'ORIGINAL' : run === 'guarded' ? 'REVISION' : 'REPLAY') + ' · PREDICTED';
+  else rl.textContent = RUN_LABELS[run] || '';
+}
+function setNum(id, v, d, cls, unit) {
   var n = $(id); clear(n); n.appendChild(document.createTextNode(fmt(v, d)));
-  n.appendChild(el('small', null, (id === 'hudDisp' || id === 'hudClear') ? 'mm' : 'N')); n.className = 'v' + (cls ? ' ' + cls : '');
+  n.appendChild(el('small', null, unit)); n.className = 'v' + (cls ? ' ' + cls : '');
 }
 function renderHud(frame) {
   var h = (frame && frame.hud) || {};
   $('hudPhase').textContent = h.phase || '—';
-  setNum('hudDisp', h.displacement_mm, 1);
-  setNum('hudForce', h.cable_force_n, 1, isNum(h.cable_force_n) ? (h.cable_force_n > FORCE_LIMIT ? 'bad' : h.cable_force_n > 0.5 ? 'warn' : 'ok') : '');
-  setNum('hudClear', h.min_clearance_mm, 1, isNum(h.min_clearance_mm) ? (h.min_clearance_mm < 0 ? 'bad' : h.min_clearance_mm < 5 ? 'warn' : 'ok') : '');
-  setNum('hudPeak', h.peak_force_n, 1, isNum(h.peak_force_n) ? (h.peak_force_n > FORCE_LIMIT ? 'bad' : '') : '');
-  var rl = $('runLabel'), run = frame && frame.run;
-  rl.className = 'overlay runlabel' + (RUN_LABELS[run] ? ' ' + run : '');
-  rl.textContent = RUN_LABELS[run] || '';
-}
-function renderFrame(frame) {
-  if (!frame) return;
-  if (frame.view === 'closeup') {
-    if (frame.image) { $('closeupImg').src = frame.image; $('closeup').classList.add('has-frame'); }
-    return;
-  }
-  if (frame.image) { $('mainImg').src = frame.image; $('viewport').classList.add('has-frame'); }
-  renderHud(frame);
-  renderLabels(frame.labels);
+  setNum('hudDisp', h.displacement_mm, 1, '', 'mm');
+  setNum('hudForce', h.cable_force_n, 1, isNum(h.cable_force_n) ? (h.cable_force_n > FORCE_LIMIT ? 'bad' : h.cable_force_n > 0.5 ? 'warn' : 'ok') : '', 'N');
+  setNum('hudClear', h.min_clearance_mm, 1, isNum(h.min_clearance_mm) ? (h.min_clearance_mm < 0 ? 'bad' : h.min_clearance_mm < 5 ? 'warn' : 'ok') : '', 'mm');
+  setNum('hudPeak', h.peak_force_n, 1, isNum(h.peak_force_n) ? (h.peak_force_n > FORCE_LIMIT ? 'bad' : '') : '', 'N');
 }
 function imageBox() {
-  var img = $('mainImg'), vp = $('viewport');
+  var img = $('mainImg'), vp = $('camView');
   var W = vp.clientWidth, H = vp.clientHeight, nw = img.naturalWidth, nh = img.naturalHeight;
   if (!nw || !nh || !W || !H) return { x: 0, y: 0, w: W, h: H };
   var s = Math.min(W / nw, H / nh), w = nw * s, h = nh * s;
@@ -646,7 +812,320 @@ function renderLabels(labels) {
 }
 $('mainImg').addEventListener('load', function () { renderLabels(lastLabels); });
 
-/* ---------- floor plan ---------- */
+function renderFrame(fr) {
+  if (!fr) return;
+  if (fr.view === 'closeup') return;                  /* v2 shows the wrist camera instead of the close-up */
+  if (isNavMission()) {
+    if (fr.image) { $('sideImg').src = fr.image; $('sideImgWrap').classList.add('has-frame'); }
+    renderSideStats();
+    if (!S.nav) setRunLabel(fr.run, false);
+  } else {
+    if (fr.image) { $('mainImg').src = fr.image; $('camView').classList.add('has-frame'); }
+    renderHud(fr); renderLabels(fr.labels); setRunLabel(fr.run, false);
+  }
+}
+
+/* ---------- secondary strip: wrist camera / follow camera stats ---------- */
+function stat(parent, k, v, d, unit, cls) {
+  var s = el('div', 'stat'); s.appendChild(el('div', 'k', k));
+  var vv = el('div', 'v' + (cls ? ' ' + cls : ''), fmt(v, d)); vv.appendChild(el('small', null, unit)); s.appendChild(vv); parent.appendChild(s); return s;
+}
+function renderSideStats() {
+  var box = $('sideStats'); clear(box);
+  if (isNavMission()) {
+    var h = (S.last_frame.main && S.last_frame.main.hud) || {}, g = el('div', 'stat2');
+    stat(g, 'Speed', h.speed_mps, 2, 'm/s', '');
+    stat(g, 'LiDAR min', h.lidar_min_m, 2, 'm', isNum(h.lidar_min_m) ? (h.lidar_min_m < 0.5 ? 'bad' : h.lidar_min_m < 1 ? 'warn' : 'ok') : '');
+    box.appendChild(g);
+    var g2 = el('div', 'stat2');
+    stat(g2, 'Distance to target', h.distance_to_target_m, 1, 'm', '');
+    var ph = el('div', 'stat'); ph.appendChild(el('div', 'k', 'Phase')); ph.appendChild(el('div', 'v', h.phase || '—')); g2.appendChild(ph);
+    box.appendChild(g2);
+    $('sideMeta').textContent = S.last_frame.main && isNum(S.last_frame.main.t) ? 't = ' + S.last_frame.main.t.toFixed(1) + ' s' : '';
+    return;
+  }
+  var c = S.camera || {}, g3 = el('div', 'stat2');
+  var camCls = isNum(c.camera_clearance_mm) ? (c.camera_clearance_mm < 0 ? 'bad' : c.camera_clearance_mm < 5 ? 'warn' : 'ok') : '';
+  var simCls = isNum(c.sim_clearance_mm) ? (c.sim_clearance_mm < 0 ? 'bad' : c.sim_clearance_mm < 5 ? 'warn' : 'ok') : '';
+  stat(g3, 'Camera clearance (RGB-D)', c.camera_clearance_mm, 1, 'mm', camCls);
+  stat(g3, 'Simulator clearance (geometry)', c.sim_clearance_mm, 1, 'mm', simCls);
+  box.appendChild(g3);
+  var conf = el('div', 'conf'), cf = c.confidence;
+  var bcls = cf === 'confident' ? 'green' : cf === 'uncertain' ? 'amber' : cf === 'none' ? 'grey' : 'grey';
+  var btxt = cf === 'confident' ? 'confident' : cf === 'uncertain' ? 'uncertain' : cf === 'none' ? 'none' : '—';
+  conf.appendChild(el('span', 'badge small ' + bcls, btxt));
+  var reason = el('div', 'reason', c.reason || (S.camera ? '' : 'Cable detection appears when the wrist camera streams'));
+  if (c.reason) reason.title = c.reason;
+  if (cf === 'uncertain' || cf === 'none') reason.style.color = cssVar('--amber') || '#fbbf24';
+  conf.appendChild(reason); box.appendChild(conf);
+  $('sideMeta').textContent = c.source ? c.source : '';
+  if (c.source) $('sideMeta').title = c.source;
+}
+function renderSideImage() {
+  var img = $('sideImg'), wrap = $('sideImgWrap'), src = null;
+  if (isNavMission()) src = S.last_frame.main && S.last_frame.main.image; else src = S.camera && S.camera.image;
+  if (src) { img.src = src; wrap.classList.add('has-frame'); } else { img.removeAttribute('src'); wrap.classList.remove('has-frame'); }
+}
+
+/* ---------- navigation HUD + live map ---------- */
+function renderNavHud(nav) {
+  var n = nav || {};
+  $('navPhase').textContent = n.arrived && n.inspected ? 'inspected' : n.arrived ? 'arrived' : n.blocked ? 'blocked' : (S.nav ? (n.predicted ? 'predicted' : 'drive') : '—');
+  $('navPhase').style.color = n.blocked ? (cssVar('--red') || '#f87171') : (n.arrived ? (cssVar('--green') || '#4ade80') : '');
+  setNum('navSpeed', n.speed_mps, 2, '', 'm/s');
+  setNum('navLidar', n.lidar_min_m, 2, isNum(n.lidar_min_m) ? (n.lidar_min_m < 0.5 ? 'bad' : n.lidar_min_m < 1 ? 'warn' : 'ok') : '', 'm');
+  setNum('navDist', n.distance_to_target_m, 1, isNum(n.distance_to_target_m) ? (n.distance_to_target_m < 0.5 ? 'ok' : '') : '', 'm');
+  var rt = n.route_id ? String(n.route_id) : '—';
+  if (isNum(n.waypoint_index) && Array.isArray(n.route) && n.route.length) rt += ' · wp ' + n.waypoint_index + '/' + (n.route.length - 1);
+  $('navRoute').textContent = rt;
+  var src = (n.pose_source || (S.map && S.map.pose_source) || '');
+  $('poseCaption').textContent = /ground truth/i.test(src) ? 'Pose: simulator ground truth' : (src ? 'Pose: ' + src : 'Pose: simulator ground truth');
+}
+function noteBlocked(ev) {
+  var b = ev && ev.blocked_at;
+  if (!Array.isArray(b) || !isNum(b[0]) || !isNum(b[1])) return;
+  var x = Math.round(b[0] * 100) / 100, y = Math.round(b[1] * 100) / 100, pred = ev.predicted === true;
+  for (var i = 0; i < S.blocked.length; i++) { var m = S.blocked[i]; if (m.x === x && m.y === y) { if (!pred) m.predicted = false; return; } }
+  S.blocked.push({ x: x, y: y, run: ev.run, predicted: pred });
+  if (S.blocked.length > 50) S.blocked.shift();
+}
+var mapC = { canvas: $('map'), wrap: $('mapView') };
+function drawMap() {
+  var c = mapC.canvas, w = mapC.wrap.clientWidth, h = mapC.wrap.clientHeight;
+  if (!w || !h) return;
+  var dpr = window.devicePixelRatio || 1;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  var ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  var M = S.map, nav = S.nav;
+  mapC.wrap.classList.toggle('has-map', !!(M || nav));
+  if (!M && !nav) return;
+  var b = (M && Array.isArray(M.bounds) && M.bounds.length === 4 && M.bounds.every(isNum) && M.bounds[2] > M.bounds[0] && M.bounds[3] > M.bounds[1]) ? M.bounds : [-6, -5, 6, 5];
+  var f = Math.max(9, bodyFont() * 0.82);
+  ctx.font = f + 'px ' + FONT;
+  var padL = f * 2.6, padB = f * 1.9, padT = f * 0.9, padR = f * 0.9;
+  var hudW = ($('navHud').offsetWidth || 0) + f * 2;            /* keep the HUD column clear of the plot */
+  var bw = b[2] - b[0], bh = b[3] - b[1];
+  var s = Math.min((w - padL - padR - hudW) / bw, (h - padT - padB) / bh);
+  if (!(s > 0)) s = Math.min((w - padL - padR) / bw, (h - padT - padB) / bh);
+  var pw = bw * s, ph = bh * s, ox = padL + Math.max(0, (w - padL - padR - hudW - pw) / 2), oy = padT + (h - padT - padB - ph) / 2;
+  function X(x) { return ox + (x - b[0]) * s; }
+  function Y(y) { return oy + (b[3] - y) * s; }
+  var muted = cssVar('--muted') || '#94a3b8', grid = cssVar('--grid') || '#1c2636', text2 = cssVar('--text-2') || '#cbd5e1', faint = cssVar('--faint') || '#64748b';
+  var cyan = cssVar('--cyan') || '#38bdf8', amber = cssVar('--amber') || '#fbbf24', red = cssVar('--red') || '#f87171', green = cssVar('--green') || '#4ade80', bg = '#05080f';
+  /* floor + 1 m grid (hairline, solid) */
+  ctx.fillStyle = '#0a1020'; ctx.fillRect(ox, oy, pw, ph);
+  var step = s >= 30 ? 1 : 2, labelEvery = s >= 60 ? 1 : 2;
+  ctx.strokeStyle = grid; ctx.lineWidth = 1;
+  for (var gx = Math.ceil(b[0]); gx <= b[2]; gx += step) { var px = Math.round(X(gx)) + 0.5; ctx.beginPath(); ctx.moveTo(px, oy); ctx.lineTo(px, oy + ph); ctx.stroke(); }
+  for (var gy = Math.ceil(b[1]); gy <= b[3]; gy += step) { var py = Math.round(Y(gy)) + 0.5; ctx.beginPath(); ctx.moveTo(ox, py); ctx.lineTo(ox + pw, py); ctx.stroke(); }
+  /* axes in metres */
+  ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (var lx = Math.ceil(b[0]); lx <= b[2]; lx += labelEvery) { if (lx === b[2]) continue; ctx.fillText(String(lx), X(lx), oy + ph + 3); }
+  ctx.textAlign = 'right'; ctx.fillText('x (m)', ox + pw, oy + ph + 3);
+  ctx.textBaseline = 'middle';
+  for (var ly = Math.ceil(b[1]); ly <= b[3]; ly += labelEvery) { if (ly === b[3]) continue; ctx.fillText(String(ly), ox - 4, Y(ly)); }
+  ctx.textBaseline = 'top'; ctx.fillText('y (m)', ox - 4, oy);
+  ctx.strokeStyle = cssVar('--border-2') || '#2b3648'; ctx.strokeRect(ox + 0.5, oy + 0.5, pw - 1, ph - 1);
+  ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, pw, ph); ctx.clip();
+  function poly(pts, close) { ctx.beginPath(); var n = 0; pts.forEach(function (p) { if (!Array.isArray(p) || !isNum(p[0]) || !isNum(p[1])) return; if (n++ === 0) ctx.moveTo(X(p[0]), Y(p[1])); else ctx.lineTo(X(p[0]), Y(p[1])); }); if (close) ctx.closePath(); return n; }
+  /* routes: current solid, others faint */
+  var routes = (M && M.routes && typeof M.routes === 'object') ? M.routes : {};
+  var curId = nav && nav.route_id != null ? String(nav.route_id) : null;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  Object.keys(routes).forEach(function (id) {
+    var r = routes[id]; if (!r || !Array.isArray(r.waypoints)) return;
+    var cur = id === curId;
+    ctx.setLineDash(cur ? [] : [5, 5]); ctx.strokeStyle = cur ? 'rgba(203,213,225,0.95)' : 'rgba(148,163,184,0.35)'; ctx.lineWidth = cur ? 2 : 1;
+    if (poly(r.waypoints) > 1) ctx.stroke();
+    /* label above the midpoint of the longest segment (least likely to sit on a rack) */
+    var bestLen = -1, a0 = null, a1 = null;
+    for (var si = 1; si < r.waypoints.length; si++) {
+      var p0 = r.waypoints[si - 1], p1 = r.waypoints[si];
+      if (!Array.isArray(p0) || !Array.isArray(p1) || !isNum(p0[0]) || !isNum(p0[1]) || !isNum(p1[0]) || !isNum(p1[1])) continue;
+      var len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]); if (len > bestLen) { bestLen = len; a0 = p0; a1 = p1; }
+    }
+    if (a0) {
+      var mx = X((a0[0] + a1[0]) / 2), my = Y((a0[1] + a1[1]) / 2);
+      ctx.fillStyle = cur ? text2 : faint; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = (f * 0.95) + 'px ' + FONT;
+      ctx.fillText(id + (r.label ? ' · ' + r.label : '') + (isNum(r.length_m) ? ' · ' + r.length_m.toFixed(1) + ' m' : ''), mx, my - Math.max(12, 0.3 * s));
+      ctx.font = f + 'px ' + FONT;
+    }
+  });
+  ctx.setLineDash([]);
+  if (nav && Array.isArray(nav.route) && (!curId || !routes[curId])) { ctx.strokeStyle = 'rgba(203,213,225,0.95)'; ctx.lineWidth = 2; if (poly(nav.route) > 1) ctx.stroke(); }
+  /* racks */
+  var racks = (M && Array.isArray(M.racks)) ? M.racks : [];
+  racks.forEach(function (r) {
+    if (!r || !isNum(r.x) || !isNum(r.y)) return;
+    var rw = isNum(r.w) ? r.w : 1, rh = isNum(r.h) ? r.h : 0.8, target = M && r.id === M.target;
+    var x0 = X(r.x - rw / 2), y0 = Y(r.y + rh / 2), ww = rw * s, hh = rh * s;
+    ctx.fillStyle = target ? 'rgba(56,189,248,0.26)' : '#1b2537'; ctx.fillRect(x0, y0, ww, hh);
+    ctx.strokeStyle = target ? cyan : (cssVar('--border-2') || '#2b3648'); ctx.lineWidth = target ? 2 : 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, ww - 1, hh - 1);
+    ctx.fillStyle = target ? '#e0f2fe' : text2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = (target ? 'bold ' : '') + f + 'px ' + FONT;
+    ctx.fillText(String(r.id == null ? '' : r.id), x0 + ww / 2, y0 + hh / 2);
+    ctx.font = f + 'px ' + FONT;
+  });
+  /* obstacle */
+  var o = M && M.obstacle;
+  if (o && isNum(o.x) && isNum(o.y)) {
+    var ow = (isNum(o.w) ? o.w : 0.6) * s, oh = (isNum(o.h) ? o.h : 0.6) * s, ox0 = X(o.x) - ow / 2, oy0 = Y(o.y) - oh / 2;
+    ctx.fillStyle = 'rgba(251,191,36,0.3)'; ctx.fillRect(ox0, oy0, ow, oh);
+    ctx.strokeStyle = amber; ctx.lineWidth = 1.5; ctx.strokeRect(ox0 + 0.5, oy0 + 0.5, ow - 1, oh - 1);
+    ctx.fillStyle = text2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(o.label || 'obstacle', ox0 + ow / 2, oy0 + oh + 3);
+  }
+  /* start marker */
+  if (M && Array.isArray(M.start) && isNum(M.start[0]) && isNum(M.start[1])) {
+    ctx.strokeStyle = text2; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(M.start[0]), Y(M.start[1]), 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = muted; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('start', X(M.start[0]) + 7, Y(M.start[1]) + 5);
+  }
+  /* arrival ring at the target point */
+  var tp = M && Array.isArray(M.target_point) ? M.target_point : null;
+  if (tp && isNum(tp[0]) && isNum(tp[1])) {
+    var arrived = !!(nav && nav.arrived), rr = Math.max(8, 0.35 * s);
+    ctx.setLineDash(arrived ? [] : [4, 4]); ctx.strokeStyle = arrived ? green : cyan; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(X(tp[0]), Y(tp[1]), rr, 0, Math.PI * 2); ctx.stroke();
+    if (arrived) { ctx.fillStyle = 'rgba(74,222,128,0.18)'; ctx.fill(); }
+    ctx.setLineDash([]);
+    ctx.fillStyle = arrived ? green : cyan; ctx.beginPath(); ctx.arc(X(tp[0]), Y(tp[1]), 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+  /* trails: ghosts dashed, live solid (current run full, others dimmed) */
+  Object.keys(S.trails).forEach(function (key) {
+    var tr = S.trails[key]; if (!Array.isArray(tr) || tr.length < 2) return;
+    var ghost = key.indexOf('ghost:') === 0, run = ghost ? key.split(':')[1] : key, col = SERIES_COLORS[run] || cyan;
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2;
+    if (ghost) { ctx.setLineDash([6, 5]); ctx.globalAlpha = 0.75; } else { ctx.globalAlpha = (nav && nav.run === run && !nav.predicted) ? 1 : 0.5; }
+    if (poly(tr) > 1) ctx.stroke(); ctx.restore();
+  });
+  /* latest nav: lidar, blocked marker, robot */
+  var pose = nav && Array.isArray(nav.pose) && isNum(nav.pose[0]) && isNum(nav.pose[1]) ? nav.pose : null;
+  if (nav && Array.isArray(nav.lidar)) {
+    if (pose) { ctx.save(); ctx.strokeStyle = 'rgba(203,213,225,0.14)'; ctx.lineWidth = 1; ctx.beginPath(); nav.lidar.forEach(function (p) { if (Array.isArray(p) && isNum(p[0]) && isNum(p[1])) { ctx.moveTo(X(pose[0]), Y(pose[1])); ctx.lineTo(X(p[0]), Y(p[1])); } }); ctx.stroke(); ctx.restore(); }
+    ctx.fillStyle = 'rgba(203,213,225,0.9)';
+    nav.lidar.forEach(function (p) { if (!Array.isArray(p) || !isNum(p[0]) || !isNum(p[1])) return; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 2.2, 0, Math.PI * 2); ctx.fill(); });
+  }
+  S.blocked.forEach(function (bm) {
+    var bx = X(bm.x), by = Y(bm.y), r2 = Math.max(7, 0.22 * s);
+    ctx.save(); if (bm.predicted) ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = red; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(bx - r2, by - r2); ctx.lineTo(bx + r2, by + r2); ctx.moveTo(bx + r2, by - r2); ctx.lineTo(bx - r2, by + r2); ctx.stroke();
+    ctx.fillStyle = '#fecaca'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.font = 'bold ' + f + 'px ' + FONT; ctx.fillText('blocked', bx + r2 + 4, by - 2);
+    ctx.restore();
+  });
+  if (pose) {
+    var hd = (isNum(nav.pose[2]) ? nav.pose[2] : 0) * Math.PI / 180, L = Math.max(14, 0.5 * s), Wd = L * 0.6;
+    var cx = X(pose[0]), cy = Y(pose[1]), dx = Math.cos(hd), dy = -Math.sin(hd), nx = -dy, ny = dx;
+    var tip = [cx + dx * L * 0.6, cy + dy * L * 0.6], bl = [cx - dx * L * 0.4 + nx * Wd / 2, cy - dy * L * 0.4 + ny * Wd / 2], br = [cx - dx * L * 0.4 - nx * Wd / 2, cy - dy * L * 0.4 - ny * Wd / 2];
+    var col = SERIES_COLORS[nav.run] || cyan;
+    ctx.save();
+    if (nav.predicted) ctx.globalAlpha = 0.65;
+    ctx.beginPath(); ctx.moveTo(tip[0], tip[1]); ctx.lineTo(bl[0], bl[1]); ctx.lineTo(cx - dx * L * 0.2, cy - dy * L * 0.2); ctx.lineTo(br[0], br[1]); ctx.closePath();
+    ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = bg; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    if (nav.predicted) { ctx.setLineDash([3, 3]); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke(); }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+var mapPending = false;
+function scheduleMap() { if (mapPending) return; mapPending = true; requestAnimationFrame(function () { mapPending = false; try { drawMap(); } catch (e) { console.error(e); } }); }
+
+/* ---------- strip chart (two stacked small multiples, one axis each) ---------- */
+function chartConfig(data) {
+  function niceUp(v) { if (!(v > 0)) return 0; var m = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), h = m / 2; return Math.ceil(v / h) * h; }
+  function maxOf(key) { return Math.max.apply(null, [0].concat(data.map(function (s) { return isNum(s[key]) ? s[key] : 0; }))); }
+  function minOf(key) { return Math.min.apply(null, [0].concat(data.map(function (s) { return isNum(s[key]) ? s[key] : 0; }))); }
+  if (isNavMission()) {
+    return {
+      panes: [
+        { title: 'LiDAR min (m)', key: 'lidar_min_m', lo: 0, hi: Math.max(1, niceUp(maxOf('lidar_min_m') * 1.1)), limit: null },
+        { title: 'Distance to target (m)', key: 'distance_to_target_m', lo: 0, hi: Math.max(2, niceUp(maxOf('distance_to_target_m') * 1.1)), limit: null }],
+      tip: [['LiDAR min', 'lidar_min_m', 'm', 2], ['distance to target', 'distance_to_target_m', 'm', 1], ['speed', 'speed_mps', 'm/s', 2]]
+    };
+  }
+  return {
+    panes: [
+      { title: 'Cable force (N)', key: 'cable_force_n', lo: 0, hi: Math.max(25, niceUp(maxOf('cable_force_n') * 1.1)), limit: FORCE_LIMIT, limitLabel: '20 N limit' },
+      { title: 'Simulator clearance (mm)', key: 'min_clearance_mm', lo: Math.min(-5, -niceUp(-minOf('min_clearance_mm') * 1.1)), hi: Math.max(10, niceUp(maxOf('min_clearance_mm') * 1.1)), limit: 0, limitLabel: '0 mm · contact' }],
+    tip: [['cable force', 'cable_force_n', 'N', 1], ['sim clearance', 'min_clearance_mm', 'mm', 1], ['displacement', 'displacement_mm', 'mm', 1]]
+  };
+}
+var chart = { canvas: $('chart'), wrap: $('chartwrap'), tip: $('tip'), hoverX: null };
+function axisLabel(v) { return Math.abs(v) >= 10 || v === 0 ? String(Math.round(v)) : String(+v.toFixed(1)); }
+function drawChart() {
+  var c = chart.canvas, w = chart.wrap.clientWidth, h = chart.wrap.clientHeight;
+  if (!w || !h) return;
+  var dpr = window.devicePixelRatio || 1;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  var ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  var f = Math.max(9, bodyFont() * 0.78);
+  ctx.font = f + 'px ' + FONT;
+  var data = S.series.filter(function (s) { return s && isNum(s.t); });
+  var cfg = chartConfig(data), panes = cfg.panes;
+  var padL = f * 3.4, padR = f * 8.2, padT = f * 1.2, gapY = f * 1.7, padB = f * 1.5;
+  var plotW = Math.max(10, w - padL - padR), plotH = Math.max(10, (h - padT - padB - gapY) / 2);
+  var tMin = 0, tMax = 10;
+  if (data.length) { tMin = Math.min.apply(null, data.map(function (s) { return s.t; })); tMax = Math.max.apply(null, data.map(function (s) { return s.t; })); if (tMax - tMin < 2) tMax = tMin + 2; }
+  function X(t) { return padL + (t - tMin) / (tMax - tMin) * plotW; }
+  var muted = cssVar('--muted') || '#94a3b8', grid = cssVar('--grid') || '#1c2636', faint = cssVar('--faint') || '#64748b', amber = cssVar('--amber') || '#fbbf24';
+  panes.forEach(function (p, pi) {
+    p.y0 = padT + pi * (plotH + gapY);
+    if (!(p.hi > p.lo)) p.hi = p.lo + 1;
+    p.Y = function (v) { return p.y0 + plotH - (v - p.lo) / (p.hi - p.lo) * plotH; };
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    [p.lo, (p.lo + p.hi) / 2, p.hi].forEach(function (v) { var y = Math.round(p.Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke(); });
+    ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    [p.lo, p.hi].forEach(function (v) { ctx.fillText(axisLabel(v), padL - 4, p.Y(v)); });
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(p.title, padL, p.y0 - 2);
+    if (isNum(p.limit) && p.limit >= p.lo && p.limit <= p.hi) {
+      var ly = Math.round(p.Y(p.limit)) + 0.5;
+      ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = amber; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.moveTo(padL, ly); ctx.lineTo(padL + plotW, ly); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = amber; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(p.limitLabel || '', padL + plotW + 4, ly + f * 0.5);
+    }
+    ['raw', 'guarded', 'sandbox_replay'].forEach(function (run) {
+      var pts = data.filter(function (s) { return s.run === run && isNum(s[p.key]); });
+      if (!pts.length) return;
+      ctx.strokeStyle = SERIES_COLORS[run]; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.beginPath();
+      pts.forEach(function (s, i) { var x = X(s.t), y = Math.max(p.y0, Math.min(p.y0 + plotH, p.Y(s[p.key]))); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+      ctx.stroke();
+      var last = pts[pts.length - 1], lx = X(last.t), ly2 = Math.max(p.y0, Math.min(p.y0 + plotH, p.Y(last[p.key])));
+      ctx.fillStyle = cssVar('--panel') || '#111827'; ctx.beginPath(); ctx.arc(lx, ly2, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = SERIES_COLORS[run]; ctx.beginPath(); ctx.arc(lx, ly2, 4, 0, Math.PI * 2); ctx.fill();
+      /* direct end-label in text ink (secondary encoding for the red/green pair) */
+      ctx.fillStyle = cssVar('--text-2') || '#cbd5e1'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      var lab = run === 'sandbox_replay' ? 'replay' : run === 'raw' ? 'original' : run;
+      var limY = isNum(p.limit) ? p.Y(p.limit) : -1e9;
+      if (Math.abs(ly2 - limY) > f * 0.9) ctx.fillText(lab, Math.min(lx + 7, padL + plotW + 4), ly2);
+    });
+  });
+  ctx.fillStyle = faint; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  var yb = padT + plotH * 2 + gapY + 3, nT = Math.max(2, Math.floor(plotW / (f * 6)));
+  for (var i = 0; i <= nT; i++) { var t = tMin + (tMax - tMin) * i / nT; ctx.fillText(t.toFixed(1) + 's', X(t), yb); }
+  if (chart.hoverX != null && data.length) {
+    var best = null, bd = Infinity;
+    data.forEach(function (s) { var d = Math.abs(X(s.t) - chart.hoverX); if (d < bd) { bd = d; best = s; } });
+    if (best) {
+      var hx = Math.round(X(best.t)) + 0.5;
+      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, padT + plotH * 2 + gapY); ctx.stroke();
+      var tip = chart.tip; clear(tip);
+      tip.appendChild(el('div', null, 't = ' + best.t.toFixed(2) + ' s · ' + (best.run === 'sandbox_replay' ? 'replay' : best.run === 'raw' ? 'original' : best.run || '')));
+      cfg.tip.forEach(function (r) { var d = el('div'); d.appendChild(el('b', null, fmt(best[r[1]], r[3]) + ' ' + r[2])); d.appendChild(el('span', 'k', r[0])); tip.appendChild(d); });
+      tip.className = 'tip on'; var tw = tip.offsetWidth;
+      tip.style.left = (hx + 10 + tw > w ? hx - tw - 10 : hx + 10) + 'px'; tip.style.top = (padT + 4) + 'px';
+    }
+  } else { chart.tip.className = 'tip'; }
+}
+chart.wrap.addEventListener('mousemove', function (e) { var r = chart.wrap.getBoundingClientRect(); chart.hoverX = e.clientX - r.left; scheduleChart(); });
+chart.wrap.addEventListener('mouseleave', function () { chart.hoverX = null; scheduleChart(); });
+var chartPending = false;
+function scheduleChart() { if (chartPending) return; chartPending = true; requestAnimationFrame(function () { chartPending = false; try { drawChart(); } catch (e) { console.error(e); } }); }
+if (window.ResizeObserver) {
+  new ResizeObserver(function () { scheduleChart(); }).observe(chart.wrap);
+  new ResizeObserver(function () { renderLabels(lastLabels); }).observe($('camView'));
+  new ResizeObserver(function () { scheduleMap(); }).observe(mapC.wrap);
+}
+window.addEventListener('resize', function () { scheduleChart(); scheduleMap(); renderLabels(lastLabels); autosizeTask(); });
+
+/* ---------- floor plan (static, transceiver mission) ---------- */
 function buildFloor() {
   var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 420 230'); svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -654,8 +1133,7 @@ function buildFloor() {
   mk('rect', { x: 0, y: 0, width: 420, height: 230, fill: '#0b1220' });
   mk('rect', { x: 22, y: 94, width: 390, height: 40, fill: 'rgba(56,189,248,0.07)' });
   mk('text', { x: 217, y: 119, 'text-anchor': 'middle', fill: '#38bdf8', 'font-size': 12, 'letter-spacing': 3, opacity: 0.85 }, 'COLD AISLE');
-  var rows = [['A', 12], ['B', 58], ['C', 136], ['D', 180]];
-  rows.forEach(function (r) {
+  [['A', 12], ['B', 58], ['C', 136], ['D', 180]].forEach(function (r) {
     mk('text', { x: 8, y: r[1] + 19, fill: '#cbd5e1', 'font-size': 14, 'font-weight': 700 }, r[0]);
     for (var i = 0; i < 10; i++) {
       var x = 26 + i * 38, target = (r[0] === 'B' && i === 6);
@@ -670,91 +1148,6 @@ function buildFloor() {
 }
 buildFloor();
 
-/* ---------- strip chart (two stacked small multiples: force N, clearance mm) ---------- */
-var SERIES_COLORS = { raw: '#e34948', guarded: '#1baf7a', sandbox_replay: '#c98500' };
-var chart = { canvas: $('chart'), wrap: $('chartwrap'), tip: $('tip'), hoverX: null, geo: null };
-function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-function drawChart() {
-  var c = chart.canvas, w = chart.wrap.clientWidth, h = chart.wrap.clientHeight;
-  if (!w || !h) return;
-  var dpr = window.devicePixelRatio || 1;
-  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
-  var ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
-  var fs = parseFloat(getComputedStyle(document.body).fontSize) || 12, f = Math.max(9, fs * 0.78);
-  ctx.font = f + 'px ' + cssVar('--font');
-  var data = S.series.filter(function (s) { return s && isNum(s.t); });
-  var padL = f * 3.4, padR = f * 7.6, padT = f * 1.2, gapY = f * 1.6, padB = f * 1.5;
-  function niceUp(v) { if (!(v > 0)) return 0; var m = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), h = m / 2; return Math.ceil(v / h) * h; }
-  var plotW = Math.max(10, w - padL - padR), plotH = Math.max(10, (h - padT - padB - gapY) / 2);
-  var tMin = 0, tMax = 10;
-  if (data.length) { tMin = Math.min.apply(null, data.map(function (s) { return s.t; })); tMax = Math.max.apply(null, data.map(function (s) { return s.t; })); if (tMax - tMin < 2) tMax = tMin + 2; }
-  var fMax = Math.max(25, niceUp(Math.max.apply(null, [0].concat(data.map(function (s) { return isNum(s.cable_force_n) ? s.cable_force_n : 0; }))) * 1.1));
-  var cVals = data.map(function (s) { return isNum(s.min_clearance_mm) ? s.min_clearance_mm : 0; });
-  var cMax = Math.max(10, niceUp(Math.max.apply(null, [0].concat(cVals)) * 1.1)), cMin = Math.min(-5, -niceUp(-Math.min.apply(null, [0].concat(cVals)) * 1.1));
-  var panes = [
-    { y0: padT, title: 'Cable force (N)', lo: 0, hi: fMax, key: 'cable_force_n', limit: FORCE_LIMIT, limitLabel: '20 N limit' },
-    { y0: padT + plotH + gapY, title: 'Min clearance (mm)', lo: cMin, hi: cMax, key: 'min_clearance_mm', limit: 0, limitLabel: '0 mm · contact' }
-  ];
-  function X(t) { return padL + (t - tMin) / (tMax - tMin) * plotW; }
-  chart.geo = { padL: padL, plotW: plotW, tMin: tMin, tMax: tMax, panes: panes, plotH: plotH, data: data, X: X };
-  var muted = cssVar('--muted') || '#94a3b8', grid = cssVar('--grid') || '#1c2636', faint = cssVar('--faint') || '#64748b';
-  panes.forEach(function (p) {
-    p.Y = function (v) { return p.y0 + plotH - (v - p.lo) / (p.hi - p.lo) * plotH; };
-    // hairline grid + baseline
-    ctx.strokeStyle = grid; ctx.lineWidth = 1;
-    [p.lo, (p.lo + p.hi) / 2, p.hi].forEach(function (v) { var y = Math.round(p.Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke(); });
-    ctx.fillStyle = muted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    [p.lo, p.hi].forEach(function (v) { ctx.fillText(Math.round(v).toString(), padL - 4, p.Y(v)); });
-    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillStyle = muted; ctx.fillText(p.title, padL, p.y0 - 2);
-    // threshold line (dashed = threshold, never grid)
-    var ly = Math.round(p.Y(p.limit)) + 0.5;
-    ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = cssVar('--amber') || '#fbbf24'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.moveTo(padL, ly); ctx.lineTo(padL + plotW, ly); ctx.stroke(); ctx.restore();
-    ctx.fillStyle = cssVar('--amber') || '#fbbf24'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(p.limitLabel, padL + plotW + 4, ly + f * 0.5);
-    // series, per run, 2px round-joined lines
-    ['raw', 'guarded', 'sandbox_replay'].forEach(function (run) {
-      var pts = data.filter(function (s) { return s.run === run && isNum(s[p.key]); });
-      if (!pts.length) return;
-      ctx.strokeStyle = SERIES_COLORS[run]; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      ctx.beginPath();
-      pts.forEach(function (s, i) { var x = X(s.t), y = Math.max(p.y0, Math.min(p.y0 + plotH, p.Y(s[p.key]))); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
-      ctx.stroke();
-      var last = pts[pts.length - 1], lx = X(last.t), ly2 = Math.max(p.y0, Math.min(p.y0 + plotH, p.Y(last[p.key])));
-      ctx.fillStyle = cssVar('--bg') || '#0b1220'; ctx.beginPath(); ctx.arc(lx, ly2, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = SERIES_COLORS[run]; ctx.beginPath(); ctx.arc(lx, ly2, 3.5, 0, Math.PI * 2); ctx.fill();
-      // direct end-label (secondary encoding for red/green): series name in text ink
-      ctx.fillStyle = cssVar('--text-2') || '#cbd5e1'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      var lab = run === 'sandbox_replay' ? 'replay' : run;
-      if (Math.abs(ly2 - ly) > f * 0.9) ctx.fillText(lab, Math.min(lx + 6, padL + plotW + 4), ly2);
-    });
-  });
-  // x axis ticks
-  ctx.fillStyle = faint; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  var yb = padT + plotH * 2 + gapY + 3, nT = Math.max(2, Math.floor(plotW / (f * 6)));
-  for (var i = 0; i <= nT; i++) { var t = tMin + (tMax - tMin) * i / nT; ctx.fillText(t.toFixed(1) + 's', X(t), yb); }
-  // crosshair
-  if (chart.hoverX != null && data.length) {
-    var best = null, bd = Infinity;
-    data.forEach(function (s) { var d = Math.abs(X(s.t) - chart.hoverX); if (d < bd) { bd = d; best = s; } });
-    if (best) {
-      var hx = Math.round(X(best.t)) + 0.5;
-      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, padT + plotH * 2 + gapY); ctx.stroke();
-      var tip = chart.tip; clear(tip);
-      tip.appendChild(el('div', null, 't = ' + best.t.toFixed(2) + ' s · ' + (best.run === 'sandbox_replay' ? 'replay' : best.run || '')));
-      [['cable force', best.cable_force_n, 'N'], ['min clearance', best.min_clearance_mm, 'mm'], ['displacement', best.displacement_mm, 'mm']].forEach(function (r) {
-        var d = el('div'); d.appendChild(el('b', null, fmt(r[1], 1) + ' ' + r[2])); d.appendChild(el('span', 'k', r[0])); tip.appendChild(d);
-      });
-      tip.className = 'tip on'; var tw = tip.offsetWidth;
-      tip.style.left = (hx + 10 + tw > w ? hx - tw - 10 : hx + 10) + 'px'; tip.style.top = (padT + 4) + 'px';
-    }
-  } else { chart.tip.className = 'tip'; }
-}
-chart.wrap.addEventListener('mousemove', function (e) { var r = chart.wrap.getBoundingClientRect(); chart.hoverX = e.clientX - r.left; scheduleChart(); });
-chart.wrap.addEventListener('mouseleave', function () { chart.hoverX = null; scheduleChart(); });
-var chartPending = false;
-function scheduleChart() { if (chartPending) return; chartPending = true; requestAnimationFrame(function () { chartPending = false; try { drawChart(); } catch (e) { console.error(e); } }); }
-if (window.ResizeObserver) { new ResizeObserver(function () { scheduleChart(); renderLabels(lastLabels); }).observe(chart.wrap); new ResizeObserver(function () { renderLabels(lastLabels); }).observe($('viewport')); }
-window.addEventListener('resize', function () { scheduleChart(); renderLabels(lastLabels); });
-
 /* ---------- banners / toast ---------- */
 function renderBanners() {
   var eb = $('errBanner'), rb = $('recBanner');
@@ -765,17 +1158,31 @@ function renderBanners() {
 var toastTimer = null;
 function toast(msg) { var t = $('toast'); t.textContent = msg; t.className = 'toast on'; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.className = 'toast'; }, 3200); }
 
+/* ---------- full render / reset ---------- */
+function autoTabFromState() {
+  var ph = S.phase;
+  if (ph === 'generating') return 'original';
+  if (ph === 'patching' || ph === 'guard_recheck') return 'revision';
+  if (ph === 'guarded_run' || ph === 'sandbox_replay') return 'skills';
+  if (S.skill_calls.length && (ph === 'done' || ph === 'withheld' || ph === 'held')) return 'skills';
+  if (S.diff_lines.length || S.revised_code) return 'revision';
+  return 'original';
+}
 function renderAll() {
-  renderStatus(); renderCode('original'); renderCode('revised'); renderGuard(); renderResult('raw'); renderResult('guarded');
-  renderFairness(); renderTimeline(); renderBanners(); scheduleChart();
-  if (S.task && document.activeElement !== $('task')) $('task').value = S.task;
-  if (S.last_frame && S.last_frame.main) renderFrame(Object.assign({ view: 'main' }, S.last_frame.main)); else { renderHud(null); renderLabels([]); }
-  if (S.last_frame && S.last_frame.closeup) renderFrame(Object.assign({ view: 'closeup' }, S.last_frame.closeup));
+  renderStatus(); renderGuardMessage(); renderOriginal(); renderRevision(); renderSkills();
+  renderResult('raw'); renderResult('guarded'); renderGuard(); renderFairness(); renderTimeline(); renderBanners();
+  renderSideImage(); renderSideStats(); renderNavHud(S.nav); scheduleChart(); scheduleMap();
+  if (S.last_frame && S.last_frame.main && !isNavMission()) renderFrame(Object.assign({ view: 'main' }, S.last_frame.main));
+  else if (!isNavMission()) { renderHud(null); renderLabels([]); $('mainImg').removeAttribute('src'); $('camView').classList.remove('has-frame'); }
+  if (isNavMission()) { if (S.nav) setRunLabel(S.nav.run, !!S.nav.predicted); else if (S.last_frame.main) setRunLabel(S.last_frame.main.run, false); else setRunLabel(null); }
+  else if (!(S.last_frame && S.last_frame.main)) setRunLabel(null);
 }
 function resetUI() {
-  var llm = S.llm; S = freshState(); S.llm = llm;
-  $('mainImg').removeAttribute('src'); $('closeupImg').removeAttribute('src');
-  $('viewport').classList.remove('has-frame'); $('closeup').classList.remove('has-frame');
+  var llm = S.llm, mission = S.mission; S = freshState(); S.llm = llm; S.mission = mission;
+  $('mainImg').removeAttribute('src'); $('camView').classList.remove('has-frame');
+  $('sideImg').removeAttribute('src'); $('sideImgWrap').classList.remove('has-frame');
+  mapC.wrap.classList.remove('has-map');
+  setTab('original');
   renderAll();
 }
 
@@ -784,52 +1191,103 @@ function handle(ev) {
   if (!ev || typeof ev !== 'object') return;
   switch (ev.type) {
     case 'snapshot': applySnapshot(ev); break;
-    case 'status': S.phase = ev.phase || S.phase; S.status_message = ev.message || ''; if (S.phase === 'generating' && S.error) { S.error = null; renderBanners(); } renderStatus(); break;
-    case 'task': if (typeof ev.text === 'string') { S.task = ev.text; if (document.activeElement !== $('task')) $('task').value = ev.text; } break;
-    case 'timeline': S.timeline.push({ t: ev.t, level: ev.level, text: ev.text }); appendTimelineRow(S.timeline[S.timeline.length - 1]); $('tlCount').textContent = S.timeline.length + ' events'; $('tl').scrollTop = $('tl').scrollHeight; break;
+    case 'status':
+      if (typeof ev.phase === 'string') S.phase = ev.phase;
+      S.status_message = typeof ev.message === 'string' ? ev.message : '';
+      if (S.phase === 'generating' && S.error) { S.error = null; renderBanners(); }
+      if (S.phase === 'guarded_run') setTab('skills');
+      else if (S.phase === 'generating') setTab('original');
+      renderStatus(); renderOriginal(); renderRevision(); break;
+    case 'mission': {
+      if (ev.id) {
+        var m = missionById(ev.id);
+        if (!m) { m = { id: ev.id, title: ev.title || ev.id, prompt: ev.prompt || '', main_view: ev.main_view === 'map' ? 'map' : 'camera', setup: [] };
+          if (ev.setup && typeof ev.setup === 'object') Object.keys(ev.setup).forEach(function (k) { m.setup.push({ key: k, label: k.replace(/_/g, ' '), type: typeof ev.setup[k] === 'boolean' ? 'bool' : 'number', 'default': ev.setup[k] }); });
+          MISSIONS.push(m); }
+        else { if (ev.title) m.title = ev.title; if (ev.prompt) m.prompt = ev.prompt; if (ev.main_view) m.main_view = ev.main_view === 'map' ? 'map' : 'camera'; }
+        S.mission = ev.id; UI.mission = ev.id;
+      }
+      if (ev.setup && typeof ev.setup === 'object') S.setup = ev.setup;
+      if (typeof ev.prompt === 'string' && ev.prompt && !S.task) setTaskText(ev.prompt);
+      renderMissionSeg(); renderSetup(); applyView(); renderAll(); break;
+    }
+    case 'task': if (typeof ev.text === 'string') { S.task = ev.text; setTaskText(ev.text); UI.taskEdited = false; } break;
+    case 'timeline': S.timeline.push({ t: ev.t, level: ev.level, text: ev.text }); appendTimelineRow(S.timeline[S.timeline.length - 1]); $('tlCount').textContent = '· ' + S.timeline.length + ' events'; $('tl').scrollTop = $('tl').scrollHeight; break;
     case 'code_token': {
       var tgt = ev.target === 'revised' ? 'revised' : 'original', tok = typeof ev.token === 'string' ? ev.token : '';
-      S.streaming[tgt] = true; if (tgt === 'original') S.original_code += tok; else S.revised_code += tok; renderCode(tgt); break;
+      S.streaming[tgt] = true;
+      if (tgt === 'original') { S.original_code += tok; setTab('original'); renderOriginal(); } else { S.revised_code += tok; setTab('revision'); renderRevision(); }
+      break;
     }
     case 'code': {
       var tg = ev.target === 'revised' ? 'revised' : 'original';
       S.streaming[tg] = false;
-      if (tg === 'original') { S.original_code = typeof ev.code === 'string' ? ev.code : S.original_code; S.original_source = ev.source || ''; }
-      else { S.revised_code = typeof ev.code === 'string' ? ev.code : S.revised_code; S.revised_source = ev.source || ''; }
-      renderCode(tg); (tg === 'original' ? $('origBody') : $('revBody')).scrollTop = 0; break;
+      if (tg === 'original') { if (typeof ev.code === 'string') S.original_code = ev.code; S.original_source = ev.source || ''; renderOriginal(); $('paneOriginal').scrollTop = 0; }
+      else { if (typeof ev.code === 'string') S.revised_code = ev.code; S.revised_source = ev.source || ''; setTab('revision'); renderRevision(); $('paneRevision').scrollTop = 0; }
+      break;
     }
-    case 'diff': { S.diff_lines = Array.isArray(ev.lines) ? ev.lines : []; S.diff_summary = ev.summary || ''; renderCode('revised'); var rb = $('revBody'), st = rb.querySelector('.sectiontitle'); rb.scrollTop = st ? st.offsetTop - rb.offsetTop : 0; break; }
+    case 'diff': S.diff_lines = Array.isArray(ev.lines) ? ev.lines : []; S.diff_summary = ev.summary || ''; setTab('revision'); renderRevision(); $('paneRevision').scrollTop = 0; break;
+    case 'policy_ids': S.policy_ids = ev; renderSkills(); break;
+    case 'skill_call': S.skill_calls.push(ev); if (S.skill_calls.length > 500) S.skill_calls.splice(0, S.skill_calls.length - 500); renderSkills(); break;
     case 'frame': {
       var fr = { run: ev.run, view: ev.view, image: ev.image, t: ev.t, hud: ev.hud, labels: ev.labels };
       if (fr.view === 'closeup') S.last_frame.closeup = fr; else S.last_frame.main = fr;
       renderFrame(fr); break;
     }
+    case 'camera_frame': S.camera = ev; if (!isNavMission()) { if (ev.image) { $('sideImg').src = ev.image; $('sideImgWrap').classList.add('has-frame'); } renderSideStats(); } break;
     case 'guard': if (ev.stage === 'revised') S.guard_revised = ev; else S.guard_initial = ev; renderGuard(); break;
-    case 'result': if (ev.run === 'guarded') S.result_guarded = ev; else if (ev.run === 'raw') S.result_raw = ev; renderResult(ev.run === 'guarded' ? 'guarded' : 'raw'); break;
+    case 'guard_message': S.guard_message = ev; renderGuardMessage(); break;
+    case 'result': if (ev.run === 'guarded') { S.result_guarded = ev; renderResult('guarded'); } else { S.result_raw = ev; renderResult('raw'); } break;
     case 'fairness': S.fairness = ev; renderFairness(); break;
-    case 'series': S.series.push({ t: ev.t, run: ev.run, cable_force_n: ev.cable_force_n, min_clearance_mm: ev.min_clearance_mm, displacement_mm: ev.displacement_mm }); if (S.series.length > 4000) S.series.splice(0, S.series.length - 4000); scheduleChart(); break;
+    case 'series': S.series.push({ t: ev.t, run: ev.run, cable_force_n: ev.cable_force_n, min_clearance_mm: ev.min_clearance_mm, displacement_mm: ev.displacement_mm, lidar_min_m: ev.lidar_min_m, speed_mps: ev.speed_mps, distance_to_target_m: ev.distance_to_target_m }); if (S.series.length > 4000) S.series.splice(0, S.series.length - 4000); scheduleChart(); break;
+    case 'map': S.map = ev; S.trails = {}; S.blocked = []; S.nav = null; renderNavHud(null); setRunLabel(null); scheduleMap(); break;
+    case 'nav': {
+      S.nav = ev;
+      noteBlocked(ev);
+      if (Array.isArray(ev.pose) && isNum(ev.pose[0]) && isNum(ev.pose[1])) {
+        var key = ev.predicted === true ? 'ghost:' + (ev.run || 'raw') + ':' + (ev.route_id == null ? '' : ev.route_id) : (ev.run || 'raw');
+        if (!S.trails[key]) S.trails[key] = [];
+        S.trails[key].push([ev.pose[0], ev.pose[1]]);
+        if (S.trails[key].length > 3000) S.trails[key].splice(0, S.trails[key].length - 3000);
+      }
+      renderNavHud(ev); setRunLabel(ev.run, ev.predicted === true); scheduleMap(); break;
+    }
     case 'error': S.error = ev.message || 'unknown error'; renderBanners(); break;
     case 'reset': resetUI(); break;
     case 'recorded': S.recorded = !!ev.active; S.recorded_at = ev.recorded_at || null; renderBanners(); break;
-    case 'done': S.done = ev; if (ev.outcome === 'withheld') S.phase = 'withheld'; else if (ev.outcome === 'error') S.phase = 'error'; else S.phase = 'done'; renderStatus(); break;
+    case 'done':
+      S.done = ev;
+      if (ev.outcome === 'withheld') S.phase = 'withheld'; else if (ev.outcome === 'held') S.phase = 'held'; else if (ev.outcome === 'error') S.phase = 'error'; else S.phase = 'done';
+      renderStatus(); renderRevision(); break;
     default: break;
   }
 }
 function applySnapshot(sn) {
-  var n = freshState();
-  n.task = sn.task || ''; n.phase = sn.phase || 'idle'; n.status_message = sn.status_message || '';
+  var n = freshState(), prevLlm = S.llm;
+  n.mission = typeof sn.mission === 'string' ? sn.mission : null;
+  n.setup = sn.setup && typeof sn.setup === 'object' ? sn.setup : null;
+  n.task = typeof sn.task === 'string' ? sn.task : ''; n.phase = sn.phase || 'idle'; n.status_message = sn.status_message || '';
   n.original_code = sn.original_code || ''; n.revised_code = sn.revised_code || '';
   n.diff_lines = Array.isArray(sn.diff_lines) ? sn.diff_lines : []; n.diff_summary = sn.diff_summary || '';
-  n.guard_initial = sn.guard_initial || null; n.guard_revised = sn.guard_revised || null;
-  n.result_raw = sn.result_raw || null; n.result_guarded = sn.result_guarded || null; n.fairness = sn.fairness || null;
+  n.guard_initial = sn.guard_initial || null; n.guard_revised = sn.guard_revised || null; n.guard_message = sn.guard_message || null;
+  n.result_raw = sn.result_raw || null; n.result_guarded = sn.result_guarded || null; n.fairness = sn.fairness || null; n.policy_ids = sn.policy_ids || null;
+  n.skill_calls = Array.isArray(sn.skill_calls) ? sn.skill_calls.filter(Boolean) : [];
+  n.camera = sn.camera || null; n.map = sn.map || null; n.nav = sn.nav || null;
+  if (n.nav && Array.isArray(n.nav.pose) && isNum(n.nav.pose[0]) && isNum(n.nav.pose[1])) { var k = n.nav.predicted === true ? 'ghost:' + (n.nav.run || 'raw') + ':' + (n.nav.route_id == null ? '' : n.nav.route_id) : (n.nav.run || 'raw'); n.trails[k] = [[n.nav.pose[0], n.nav.pose[1]]]; }
+  if (n.nav && Array.isArray(n.nav.blocked_at) && isNum(n.nav.blocked_at[0]) && isNum(n.nav.blocked_at[1])) n.blocked.push({ x: n.nav.blocked_at[0], y: n.nav.blocked_at[1], run: n.nav.run, predicted: n.nav.predicted === true });
   n.timeline = Array.isArray(sn.timeline) ? sn.timeline.filter(Boolean) : [];
   n.last_frame = { main: (sn.last_frame && sn.last_frame.main) || null, closeup: (sn.last_frame && sn.last_frame.closeup) || null };
-  n.recorded = !!sn.recorded; n.recorded_at = sn.recorded_at || null; n.llm = sn.llm || null;
+  n.recorded = !!sn.recorded; n.recorded_at = sn.recorded_at || null; n.llm = sn.llm || prevLlm || null;
   n.series = Array.isArray(sn.series) ? sn.series.filter(Boolean) : [];
-  n.original_source = sn.original_source || (n.llm && n.original_code ? n.llm.model : ''); n.revised_source = sn.revised_source || '';
+  n.original_source = sn.original_source || ''; n.revised_source = sn.revised_source || '';
+  n.done = sn.done || null; n.error = sn.error || null;
   S = n;
-  if (!S.last_frame.main) { $('mainImg').removeAttribute('src'); $('viewport').classList.remove('has-frame'); }
-  if (!S.last_frame.closeup) { $('closeupImg').removeAttribute('src'); $('closeup').classList.remove('has-frame'); }
+  if (S.mission && missionById(S.mission)) UI.mission = S.mission;
+  else if (S.mission) { MISSIONS.push({ id: S.mission, title: S.mission, prompt: S.task, main_view: S.map || S.nav ? 'map' : 'camera', setup: [] }); UI.mission = S.mission; }
+  renderMissionSeg(); renderSetup(); applyView();
+  setTaskText(S.task || (currentMission().prompt || ''));
+  if (!S.last_frame.main) { $('mainImg').removeAttribute('src'); $('camView').classList.remove('has-frame'); }
+  setTab(autoTabFromState());
   renderAll();
 }
 function safeHandle(ev) { try { handle(ev); } catch (e) { console.error('event handling failed', ev && ev.type, e); } }
@@ -841,10 +1299,10 @@ function post(path, body) {
 }
 $('btnRun').addEventListener('click', function () {
   var task = $('task').value;
-  if (MOCK) { runMock(task); return; }
-  post('/api/run', { task: task }).then(function (r) {
+  if (MOCK) { runMock(task, false); return; }
+  post('/api/run', { mission: UI.mission, task: task, setup: getSetupValues() }).then(function (r) {
     if (r.status === 409) toast('A comparison is already running (409 busy)');
-    else if (r.status >= 400) toast('Run request failed: ' + (r.json && r.json.error || r.status));
+    else if (r.status >= 400) toast('Run request failed: ' + ((r.json && r.json.error) || r.status));
   }).catch(function () { toast('Backend unreachable'); });
 });
 $('btnReset').addEventListener('click', function () {
@@ -861,86 +1319,139 @@ $('btnReplay').addEventListener('click', function () {
 });
 $('btnFull').addEventListener('click', function () {
   var d = document.documentElement;
-  if (document.fullscreenElement) { document.exitFullscreen && document.exitFullscreen(); }
-  else if (d.requestFullscreen) d.requestFullscreen().catch(function () {});
+  try { if (document.fullscreenElement) { document.exitFullscreen && document.exitFullscreen(); } else if (d.requestFullscreen) d.requestFullscreen().catch(function () {}); } catch (e) {}
 });
 function connect() {
-  var es;
   if (STATIC) return;
+  var es;
   try { es = new EventSource('/api/events'); } catch (e) { $('reconnect').className = 'reconnect on'; return; }
   es.onopen = function () { $('reconnect').className = 'reconnect'; };
   es.onerror = function () { $('reconnect').className = 'reconnect on'; };
   es.onmessage = function (m) { var ev = null; try { ev = JSON.parse(m.data); } catch (e) { return; } safeHandle(ev); };
 }
-renderAll();
-if (!MOCK) {
-  fetch('/api/state').then(function (r) { return r.json(); }).then(function (sn) { if (sn && typeof sn === 'object') applySnapshot(sn); }).catch(function () {}).then(connect);
+function loadMissions() {
+  return fetch('/api/missions').then(function (r) { return r.json(); }).then(function (list) {
+    if (Array.isArray(list) && list.length) {
+      var ok = list.filter(function (m) { return m && typeof m.id === 'string'; });
+      if (ok.length) { MISSIONS = ok.map(function (m) { return { id: m.id, title: m.title || m.id, prompt: m.prompt || '', main_view: m.main_view === 'map' ? 'map' : 'camera', setup: Array.isArray(m.setup) ? m.setup : [] }; }); }
+    }
+  }).catch(function () {});
 }
 
-/* ---------- mock mode (?mock=1): scripted fake run, no backend ---------- */
+/* initial paint */
+renderMissionSeg(); renderSetup(); applyView(); setTaskText(currentMission().prompt || ''); renderAll();
+if (!MOCK) {
+  loadMissions().then(function () {
+    if (!missionById(UI.mission)) UI.mission = MISSIONS[0].id;
+    renderMissionSeg(); renderSetup(); applyView(); setTaskText(currentMission().prompt || ''); renderAll();
+    return fetch('/api/state').then(function (r) { return r.json(); }).then(function (sn) { if (sn && typeof sn === 'object') applySnapshot(sn); }).catch(function () {});
+  }).then(connect);
+}
+
+/* ====================================================================
+   Mock mode (?mock=1 [&mission=navigation]): scripted fake run, no backend
+   ==================================================================== */
 var mockTimers = [];
 function mockStop() { mockTimers.forEach(clearTimeout); mockTimers = []; }
-function mockFrame(run, view, disp, force, clear, phase, step) {
-  var W = view === 'main' ? 640 : 480, H = view === 'main' ? 360 : 300;
-  var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d');
+var SHA_ORIG = '9f2c8a1b7e4d3c5a6b8f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3';
+var SHA_REV = '3c1d9e7f5a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d0e2f4a6b8c0d2e4f6a8b0c2d';
+var SHA_STATE = 'c41e77a0b3d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3';
+var MOCK_LLM = { model: 'qwen2.5-coder:7b', endpoint: 'http://localhost:11434', streaming: true };
+function mockSnapshot(missionId, task, setup) {
+  return { type: 'snapshot', mission: missionId, setup: setup, task: task, phase: 'idle', status_message: '', original_code: '', revised_code: '', diff_lines: [], diff_summary: '',
+    original_source: '', revised_source: '', guard_initial: null, guard_revised: null, guard_message: null, result_raw: null, result_guarded: null, fairness: null, policy_ids: null,
+    skill_calls: [], camera: null, map: null, nav: null, timeline: [{ t: 0, level: 'info', text: 'Mock snapshot loaded (no backend)' }], last_frame: { main: null, closeup: null },
+    recorded: false, recorded_at: null, llm: MOCK_LLM, series: [], done: null, error: null };
+}
+function tokens(code) { return code.match(/\S+\s*|\s+/g) || [code]; }
+function simpleDiff(a, b) {
+  var A = a.split('\n'), B = b.split('\n'), out = [], i = 0, j = 0;
+  while (i < A.length || j < B.length) {
+    if (i < A.length && j < B.length && A[i] === B[j]) { out.push({ op: ' ', text: A[i] }); i++; j++; continue; }
+    var k = B.indexOf(A[i], j);
+    if (i >= A.length) { out.push({ op: '+', text: B[j] }); j++; }
+    else if (j >= B.length) { out.push({ op: '-', text: A[i] }); i++; }
+    else if (k >= 0 && k - j <= 2) { while (j < k) { out.push({ op: '+', text: B[j] }); j++; } }
+    else { out.push({ op: '-', text: A[i] }); i++; var k2 = A.indexOf(B[j], i); if (k2 < 0 || k2 - i > 2) { out.push({ op: '+', text: B[j] }); j++; } }
+  }
+  return out;
+}
+
+/* --- transceiver mock --- */
+var mockPeak = 0;
+function mockFrame(run, disp, force, clr, phase, step) {
+  var W = 640, H = 360, c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d');
   g.fillStyle = '#0a0f1a'; g.fillRect(0, 0, W, H);
   g.strokeStyle = 'rgba(56,189,248,0.08)'; for (var i = 0; i < W; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, H); g.stroke(); } for (var j = 0; j < H; j += 32) { g.beginPath(); g.moveTo(0, j); g.lineTo(W, j); g.stroke(); }
-  var scale = view === 'main' ? 1 : 1.7, ox = view === 'main' ? 0 : -120, oy = view === 'main' ? 0 : -60;
-  function R(x, y, w, h, col) { g.fillStyle = col; g.fillRect((x + ox) * scale, (y + oy) * scale, w * scale, h * scale); }
+  function R(x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, h); }
   R(80, 60, 240, 240, '#1f2937'); R(90, 70, 220, 220, '#111827');
   for (var u = 0; u < 5; u++) R(96, 80 + u * 42, 208, 34, u === 2 ? '#0b1220' : '#1b2537');
   var tx = 300 + disp * 1.2, ty = 164;
   R(tx - 60, ty, 60, 26, '#38bdf8'); R(tx - 8, ty + 6, 8, 14, '#0ea5e9');
-  var sweep = Math.max(0, disp - 48) * (clear < 0 ? 1 : 0);
-  g.strokeStyle = '#fb923c'; g.lineWidth = 6 * scale; g.lineCap = 'round'; g.beginPath();
-  g.moveTo((120 + ox) * scale, (236 + oy) * scale); g.quadraticCurveTo((330 + ox + sweep * 1.2) * scale, (190 + oy - sweep * 0.3) * scale, (520 + ox) * scale, (230 + oy) * scale); g.stroke();
+  var sweep = Math.max(0, disp - 48) * (clr < 0 ? 1 : 0);
+  g.strokeStyle = '#fb923c'; g.lineWidth = 6; g.lineCap = 'round'; g.beginPath();
+  g.moveTo(120, 236); g.quadraticCurveTo(330 + sweep * 1.2, 190 - sweep * 0.3, 520, 230); g.stroke();
   R(tx, ty - 8, 90, 10, '#f87171'); R(tx, ty + 24, 90, 10, '#f87171'); R(tx + 60, ty - 8, 30, 42, '#b91c1c');
-  g.fillStyle = '#94a3b8'; g.font = (12 * scale) + 'px sans-serif'; g.fillText(view === 'main' ? 'mock MuJoCo frame · ' + run + ' · step ' + step : 'mock close-up', 10, H - 10);
-  var labels = view === 'main' ? [
+  g.fillStyle = '#94a3b8'; g.font = '12px sans-serif'; g.fillText('mock MuJoCo frame · ' + run + ' · step ' + step, 10, H - 10);
+  var labels = [
     { name: 'Target transceiver', u: (tx - 30) / W, v: (ty + 2) / H, color: '#38bdf8' },
     { name: 'Neighbouring fibre cable', u: 0.33, v: 0.60, color: '#fb923c' },
-    { name: 'Gripper', u: (tx + 60) / W, v: (ty - 6) / H, color: '#f87171' }] : [];
-  return { type: 'frame', run: run, view: view, image: c.toDataURL('image/jpeg', 0.72), t: step * 0.1,
-    hud: { phase: phase, step: step, displacement_mm: disp, cable_force_n: force, peak_force_n: mockPeak = Math.max(mockPeak, force), min_clearance_mm: clear }, labels: labels };
+    { name: 'Gripper', u: (tx + 60) / W, v: (ty - 6) / H, color: '#f87171' }];
+  mockPeak = Math.max(mockPeak, force);
+  return { type: 'frame', run: run, view: 'main', image: c.toDataURL('image/jpeg', 0.72), t: step * 0.1,
+    hud: { phase: phase, step: step, displacement_mm: disp, cable_force_n: force, peak_force_n: mockPeak, min_clearance_mm: clr }, labels: labels };
 }
-var mockPeak = 0;
+function mockCameraFrame(run, disp, clr, step) {
+  var W = 320, H = 200, c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d');
+  g.fillStyle = '#1a1f2b'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#2a3142'; g.fillRect(0, 120, W, 80);
+  var sweep = Math.max(0, disp - 48) * (clr < 0 ? 1 : 0);
+  g.strokeStyle = '#d97706'; g.lineWidth = 14; g.lineCap = 'round'; g.beginPath(); g.moveTo(20, 140); g.quadraticCurveTo(160 + sweep, 95 - sweep * 0.4, 300, 130); g.stroke();
+  g.strokeStyle = 'rgba(74,222,128,0.55)'; g.lineWidth = 14; g.beginPath(); g.moveTo(20, 140); g.quadraticCurveTo(160 + sweep, 95 - sweep * 0.4, 300, 130); g.stroke();
+  g.fillStyle = '#38bdf8'; g.fillRect(140 + disp * 0.6, 40, 70, 30);
+  g.fillStyle = '#f87171'; g.fillRect(205 + disp * 0.6, 30, 60, 50);
+  g.strokeStyle = '#4ade80'; g.lineWidth = 2; g.strokeRect(12, 84 - sweep * 0.4, 296, 70 + sweep * 0.4);
+  g.fillStyle = '#e5e7eb'; g.font = '11px sans-serif'; g.fillText('wrist RGB-D (mock) · cable px 812 · step ' + step, 8, 14);
+  var camClr = Math.round((clr + (Math.sin(step) * 0.6)) * 10) / 10;
+  return { type: 'camera_frame', run: run, t: step * 0.1, image: c.toDataURL('image/jpeg', 0.7), detected: true, pixel_count: 812, bbox: [12, 84, 296, 70],
+    camera_clearance_mm: camClr, sim_clearance_mm: clr, depth_spread_mm: 3.1, confidence: 'confident', reason: '812 cable pixels, depth p10-p90 within 20 mm',
+    source: 'wrist RGB-D camera (rendered), colour segmentation + aligned metric depth' };
+}
 var MOCK_ORIG = 'def policy(robot):\n    # Disengage transceiver in slot 1, then reseat it.\n    robot.move_to("rack_B07_slot1", approach_offset_m=0.05)\n    robot.open_gripper()\n    robot.approach(0.05)\n    robot.close_gripper(force_n=12.0)\n    robot.pull(stroke_m=0.120, speed_mps=0.05)\n    robot.dwell(s=0.5)\n    robot.push(stroke_m=0.120, speed_mps=0.03)\n    robot.open_gripper()\n    robot.retract(0.05)\n    return robot.status()\n';
-var MOCK_REV = 'def policy(robot):\n    # Disengage transceiver in slot 1, then reseat it.\n    robot.move_to("rack_B07_slot1", approach_offset_m=0.05)\n    robot.open_gripper()\n    robot.approach(0.05)\n    robot.close_gripper(force_n=12.0)\n    # guard evidence: cable contact began at 48 mm of travel; stay well short\n    robot.pull(stroke_m=0.035, speed_mps=0.03)\n    robot.dwell(s=0.5)\n    robot.push(stroke_m=0.035, speed_mps=0.03)\n    robot.open_gripper()\n    robot.retract(0.05)\n    return robot.status()\n';
-function mockDiff() {
-  var a = MOCK_ORIG.split('\n'), b = MOCK_REV.split('\n'), out = [];
-  for (var i = 0, j = 0; i < a.length || j < b.length;) {
-    if (a[i] === b[j]) { out.push({ op: ' ', text: a[i] }); i++; j++; }
-    else if (b[j] && b[j].indexOf('guard evidence') >= 0) { out.push({ op: '+', text: b[j] }); j++; }
-    else { if (a[i] != null) out.push({ op: '-', text: a[i] }); if (b[j] != null) out.push({ op: '+', text: b[j] }); i++; j++; }
-  }
-  return out.filter(function (l) { return l.text !== undefined; });
-}
-function runMock(task, recorded) {
-  mockStop(); mockPeak = 0; var t0 = 0;
+var MOCK_REV = 'def policy(robot):\n    # Disengage transceiver in slot 1, then reseat it.\n    robot.move_to("rack_B07_slot1", approach_offset_m=0.05)\n    robot.open_gripper()\n    robot.approach(0.05)\n    robot.close_gripper(force_n=12.0)\n    # guard evidence: cable contact began at 48 mm of travel; stay well short\n    robot.pull(stroke_m=0.037, speed_mps=0.03)\n    robot.dwell(s=0.5)\n    robot.push(stroke_m=0.037, speed_mps=0.03)\n    robot.open_gripper()\n    robot.retract(0.05)\n    return robot.status()\n';
+function runMockTransceiver(task, recorded) {
+  mockPeak = 0;
+  var setup = { cable_shift_mm: 0, camera_occluded: false };
   function at(ms, ev) { mockTimers.push(setTimeout(function () { safeHandle(typeof ev === 'function' ? ev() : ev); }, ms)); }
   function tl(ms, level, text) { at(ms, { type: 'timeline', t: ms / 1000, level: level, text: text }); }
+  function sc(ms, run, seq, skill, args, step, result, sha) { at(ms, { type: 'skill_call', run: run, seq: seq, skill: skill, args: args, step: step, result: result, policy_sha256: sha, t: ms / 1000 }); }
   at(0, { type: 'reset' });
-  at(10, { type: 'snapshot', task: task, phase: 'idle', status_message: '', original_code: '', revised_code: '', diff_lines: [], guard_initial: null, guard_revised: null, result_raw: null, result_guarded: null, fairness: null, timeline: [{ t: 0, level: 'info', text: 'Mock snapshot loaded' }], last_frame: { main: null, closeup: null }, recorded: false, recorded_at: null, llm: { model: 'qwen2.5-coder:7b', endpoint: 'http://localhost:11434', streaming: true }, series: [] });
+  at(10, mockSnapshot('transceiver', task, setup));
   if (recorded) at(20, { type: 'recorded', active: true, recorded_at: '2026-11-08T03:10:00Z', note: 'Recorded run' });
+  at(60, { type: 'mission', id: 'transceiver', title: 'Transceiver reseat', prompt: DEFAULT_MISSIONS[0].prompt, setup: setup, main_view: 'camera' });
   at(100, { type: 'task', text: task });
   at(150, { type: 'status', phase: 'generating', message: 'Asking qwen2.5-coder:7b for a procedure…' }); tl(150, 'info', 'Prompting local model (Ollama, qwen2.5-coder:7b)');
-  var toks = MOCK_ORIG.match(/\S+\s*|\s+/g) || [MOCK_ORIG];
-  toks.forEach(function (tk, i) { at(250 + i * 28, { type: 'code_token', target: 'original', token: tk }); });
-  var tGen = 250 + toks.length * 28 + 60;
+  var toks = tokens(MOCK_ORIG);
+  toks.forEach(function (tk, i) { at(250 + i * 24, { type: 'code_token', target: 'original', token: tk }); });
+  var tGen = 250 + toks.length * 24 + 60;
   at(tGen, { type: 'code', target: 'original', code: MOCK_ORIG, source: 'ollama:qwen2.5-coder:7b' }); tl(tGen, 'ok', 'Procedure received · 12 lines · AST whitelist passed');
-  at(tGen + 50, { type: 'fairness', policy_sha256: '9f2c8a1b7e4d3c5a6b8f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3', initial_state_sha256: 'c41e77a0b3d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3', raw_state_sha256: 'c41e77a0b3', guarded_state_sha256: 'c41e77a0b3', identical: true, seed: 7, cable_x_mm: 243.0, cable_y_mm: 30.0, note: 'Both paths ran the same frozen policy from the same saved state' });
-  at(tGen + 100, { type: 'status', phase: 'raw_run', message: 'Executing the raw procedure in the sandbox' }); tl(tGen + 100, 'warn', 'Raw policy executing directly in sandbox (no guard)');
+  at(tGen + 20, { type: 'policy_ids', original_sha256: SHA_ORIG, approved_sha256: null, executed_sha256: null, executed_matches_approved: null });
+  at(tGen + 50, { type: 'fairness', policy_sha256: SHA_ORIG, initial_state_sha256: SHA_STATE, raw_state_sha256: SHA_STATE, guarded_state_sha256: SHA_STATE, identical: true, seed: 7, cable_x_mm: 243.0, cable_y_mm: 30.0, setup: setup, note: 'Both paths ran from the same saved state with the same setup' });
+  at(tGen + 100, { type: 'status', phase: 'raw_run', message: 'Executing the original procedure in the sandbox' }); tl(tGen + 100, 'warn', 'Original procedure executing in the sandbox (no guard)');
   var tRaw = tGen + 150, N = 16;
+  sc(tRaw + 10, 'raw', 1, 'execute_primitive', { primitive: 'approach', distance: 0.05 }, 40, 'approached slot 1', SHA_ORIG);
+  sc(tRaw + 3 * 95, 'raw', 2, 'execute_primitive', { primitive: 'grip', force_n: 12.0 }, 120, 'gripped transceiver', SHA_ORIG);
   for (var i = 0; i <= N; i++) (function (i) {
     var d = 120 * i / N, contact = d > 48, force = contact ? Math.min(287.9, (d - 48) * 4.2 + 30) : 0, cl = contact ? -(d - 48) * 0.105 : 14.2 - d * 0.1;
     var ph = i < 3 ? 'approach' : i < 5 ? 'grip' : 'pull';
-    at(tRaw + i * 95, function () { return mockFrame('raw', 'main', d, force, cl, ph, i); });
-    if (i % 2 === 0) at(tRaw + i * 95 + 20, function () { return mockFrame('raw', 'closeup', d, force, cl, ph, i); });
+    at(tRaw + i * 95, function () { return mockFrame('raw', d, force, cl, ph, i); });
+    if (i % 2 === 0) at(tRaw + i * 95 + 20, function () { return mockCameraFrame('raw', d, cl, i); });
     at(tRaw + i * 95, { type: 'series', t: i * 0.1, run: 'raw', cable_force_n: force, min_clearance_mm: cl, displacement_mm: d });
     if (i === 8) tl(tRaw + i * 95, 'fail', 'Gripper swept into the fibre cable at 48 mm of travel');
   })(i);
   var tRawEnd = tRaw + (N + 1) * 95;
-  at(tRawEnd, { type: 'result', run: 'raw', label: 'Raw LLM policy (sandbox)', status: 'FAILED', task_completed: false, disengaged: true, reseated: false, cable_contact: true, peak_force_n: 287.9, min_clearance_mm: -7.5, max_displacement_mm: 120.0, final_displacement_mm: 0.1, note: 'Gripper swept into the fibre cable at 48 mm of travel' });
+  sc(tRawEnd - 40, 'raw', 3, 'execute_primitive', { primitive: 'pull_linear', distance: 0.12 }, 412, 'displacement 120.0 mm · cable contact at 48 mm, peak 287.9 N', SHA_ORIG);
+  at(tRawEnd, { type: 'result', run: 'raw', label: 'Original procedure (sandbox)', status: 'FAILED', task_completed: false, disengaged: true, reseated: false, cable_contact: true, cable_within_force_limit: false, peak_force_n: 287.9, min_clearance_mm: -7.5, max_displacement_mm: 120.0, final_displacement_mm: 0.1, note: 'Gripper swept into the fibre cable after 48 mm of travel' });
   at(tRawEnd + 60, { type: 'status', phase: 'guard_check', message: 'Guard running 4 perturbed sandboxes' }); tl(tRawEnd + 60, 'info', 'Guard: 4-particle perturbed sandbox ensemble');
   at(tRawEnd + 500, { type: 'guard', stage: 'initial', decision: 'INTERCEPTED', summary: 'Peak cable force 287.9 N exceeds 20.0 N in 4/4 sandboxes', checks: [
     { name: 'AST whitelist', passed: true, measured: 'ok', limit: 'imports forbidden; skills only', unit: '', detail: '' },
@@ -951,14 +1462,15 @@ function runMock(task, recorded) {
     { name: 'Task completion', passed: true, measured: 'disengaged and reseated', limit: 'stroke >= 30 mm, reseated', unit: '', detail: '' }],
     ensemble: [{ particle: 0, cable_x_offset_mm: -3.1, friction: 0.41, peak_force_n: 260.4, min_clearance_mm: -7.4, max_displacement_mm: 120.0, violated: true }, { particle: 1, cable_x_offset_mm: 1.8, friction: 0.52, peak_force_n: 287.9, min_clearance_mm: -7.5, max_displacement_mm: 120.0, violated: true }, { particle: 2, cable_x_offset_mm: 4.2, friction: 0.37, peak_force_n: 231.0, min_clearance_mm: -6.9, max_displacement_mm: 120.0, violated: true }, { particle: 3, cable_x_offset_mm: -0.6, friction: 0.48, peak_force_n: 274.3, min_clearance_mm: -7.2, max_displacement_mm: 120.0, violated: true }],
     omega: 185.7, violation_probability: 1.0, risk_score: 1.0, threshold: 0.3 });
-  tl(tRawEnd + 500, 'fail', 'Guard INTERCEPTED the procedure: 4/4 sandboxes violated the 20 N limit');
-  var tPatch = tRawEnd + 600;
+  at(tRawEnd + 520, { type: 'guard_message', stage: 'initial', verdict: 'INTERCEPTED', text: 'The guard blocked the original procedure: in all 4 sandboxes the gripper hit the neighbouring cable after about 48 mm of travel (peak 287.9 N, limit 20 N). Evidence sent back to the model.' });
+  tl(tRawEnd + 520, 'fail', 'Guard INTERCEPTED the procedure: 4/4 sandboxes violated the 20 N limit');
+  var tPatch = tRawEnd + 620;
   at(tPatch, { type: 'status', phase: 'patching', message: 'LLM revising the procedure from measured evidence' }); tl(tPatch, 'info', 'Feeding sandbox evidence back to the model');
-  var rt = MOCK_REV.match(/\S+\s*|\s+/g) || [MOCK_REV];
-  rt.forEach(function (tk, i) { at(tPatch + 50 + i * 16, { type: 'code_token', target: 'revised', token: tk }); });
-  var tRev = tPatch + 50 + rt.length * 16 + 40;
+  var rt = tokens(MOCK_REV);
+  rt.forEach(function (tk, i) { at(tPatch + 50 + i * 14, { type: 'code_token', target: 'revised', token: tk }); });
+  var tRev = tPatch + 50 + rt.length * 14 + 40;
   at(tRev, { type: 'code', target: 'revised', code: MOCK_REV, source: 'ollama:qwen2.5-coder:7b' });
-  at(tRev + 30, { type: 'diff', lines: mockDiff(), summary: 'stroke 0.120 m -> 0.035 m' }); tl(tRev + 30, 'ok', 'Revision received: pull stroke 120 mm -> 35 mm');
+  at(tRev + 30, { type: 'diff', lines: simpleDiff(MOCK_ORIG, MOCK_REV), summary: 'extraction stroke 0.120 m -> 0.037 m' }); tl(tRev + 30, 'ok', 'Revision received: pull stroke 120 mm -> 37 mm');
   at(tRev + 80, { type: 'status', phase: 'guard_recheck', message: 'Re-checking the revised procedure' });
   at(tRev + 450, { type: 'guard', stage: 'revised', decision: 'APPROVED', summary: 'Peak cable force 0.0 N, min clearance 12.1 mm in 4/4 sandboxes', checks: [
     { name: 'AST whitelist', passed: true, measured: 'ok', limit: 'imports forbidden; skills only', unit: '', detail: '' },
@@ -967,24 +1479,202 @@ function runMock(task, recorded) {
     { name: 'Epistemic variance (omega)', passed: true, measured: 0.02, limit: 0.3, unit: '', detail: '' },
     { name: 'Min cable clearance', passed: true, measured: 12.1, limit: 0.0, unit: 'mm', detail: '' },
     { name: 'Task completion', passed: true, measured: 'disengaged and reseated', limit: 'stroke >= 30 mm, reseated', unit: '', detail: '' }],
-    ensemble: [{ particle: 0, cable_x_offset_mm: -3.1, friction: 0.41, peak_force_n: 0.0, min_clearance_mm: 12.4, max_displacement_mm: 35.0, violated: false }, { particle: 1, cable_x_offset_mm: 1.8, friction: 0.52, peak_force_n: 0.0, min_clearance_mm: 12.1, max_displacement_mm: 35.0, violated: false }, { particle: 2, cable_x_offset_mm: 4.2, friction: 0.37, peak_force_n: 0.0, min_clearance_mm: 12.9, max_displacement_mm: 35.0, violated: false }, { particle: 3, cable_x_offset_mm: -0.6, friction: 0.48, peak_force_n: 0.0, min_clearance_mm: 12.2, max_displacement_mm: 35.0, violated: false }],
+    ensemble: [{ particle: 0, cable_x_offset_mm: -3.1, friction: 0.41, peak_force_n: 0.0, min_clearance_mm: 12.4, max_displacement_mm: 37.0, violated: false }, { particle: 1, cable_x_offset_mm: 1.8, friction: 0.52, peak_force_n: 0.0, min_clearance_mm: 12.1, max_displacement_mm: 37.0, violated: false }, { particle: 2, cable_x_offset_mm: 4.2, friction: 0.37, peak_force_n: 0.0, min_clearance_mm: 12.9, max_displacement_mm: 37.0, violated: false }, { particle: 3, cable_x_offset_mm: -0.6, friction: 0.48, peak_force_n: 0.0, min_clearance_mm: 12.2, max_displacement_mm: 37.0, violated: false }],
     omega: 0.02, violation_probability: 0.0, risk_score: 0.02, threshold: 0.3 });
-  tl(tRev + 450, 'ok', 'Guard APPROVED the revised procedure');
-  var tG = tRev + 520; mockPeak = 0;
-  at(tG, { type: 'status', phase: 'guarded_run', message: 'Executing the guarded procedure live' }); tl(tG, 'ok', 'Guarded policy executing live');
+  at(tRev + 470, { type: 'guard_message', stage: 'revised', verdict: 'APPROVED', text: 'The guard approved the revised procedure: with a 37 mm extraction stroke the gripper stays at least 12 mm clear of the cable in all 4 sandboxes (peak force 0 N). Executing it live.' });
+  at(tRev + 480, { type: 'policy_ids', original_sha256: SHA_ORIG, approved_sha256: SHA_REV, executed_sha256: null, executed_matches_approved: null });
+  tl(tRev + 470, 'ok', 'Guard APPROVED the revised procedure');
+  var tG = tRev + 540; mockPeak = 0;
+  at(tG, { type: 'status', phase: 'guarded_run', message: 'Executing the guarded procedure live' }); tl(tG, 'ok', 'Guarded procedure executing live');
+  sc(tG + 60, 'guarded', 1, 'execute_primitive', { primitive: 'approach', distance: 0.05 }, 40, 'approached slot 1', SHA_REV);
+  sc(tG + 60 + 2 * 90, 'guarded', 2, 'execute_primitive', { primitive: 'grip', force_n: 12.0 }, 120, 'gripped transceiver', SHA_REV);
+  sc(tG + 60 + 8 * 90, 'guarded', 3, 'execute_primitive', { primitive: 'pull_linear', distance: 0.037 }, 412, 'displacement 37.0 mm', SHA_REV);
+  sc(tG + 60 + 9 * 90, 'guarded', 4, 'execute_primitive', { primitive: 'dwell', seconds: 0.5 }, 460, 'held 0.5 s', SHA_REV);
+  sc(tG + 60 + 15 * 90, 'guarded', 5, 'execute_primitive', { primitive: 'push_linear', distance: 0.037 }, 790, 'reseated · displacement 0.2 mm', SHA_REV);
+  sc(tG + 60 + 16 * 90, 'guarded', 6, 'execute_primitive', { primitive: 'release' }, 820, 'gripper opened', SHA_REV);
   for (var k = 0; k <= N; k++) (function (k) {
-    var d = k <= 8 ? 35 * k / 8 : 35 * (N - k) / 8, cl = 14.2 - d * 0.06, ph = k < 2 ? 'approach' : k < 4 ? 'grip' : k <= 8 ? 'pull' : k === 9 ? 'dwell' : 'push';
-    at(tG + 50 + k * 90, function () { return mockFrame('guarded', 'main', d, 0, cl, ph, k); });
-    if (k % 2 === 0) at(tG + 70 + k * 90, function () { return mockFrame('guarded', 'closeup', d, 0, cl, ph, k); });
+    var d = k <= 8 ? 37 * k / 8 : 37 * (N - k) / 8, cl = 14.2 - d * 0.06, ph = k < 2 ? 'approach' : k < 4 ? 'grip' : k <= 8 ? 'pull' : k === 9 ? 'dwell' : 'push';
+    at(tG + 50 + k * 90, function () { return mockFrame('guarded', d, 0, cl, ph, k); });
+    if (k % 2 === 0) at(tG + 70 + k * 90, function () { return mockCameraFrame('guarded', d, cl, k); });
     at(tG + 50 + k * 90, { type: 'series', t: k * 0.1, run: 'guarded', cable_force_n: 0, min_clearance_mm: cl, displacement_mm: d });
   })(k);
   var tGEnd = tG + 50 + (N + 1) * 90;
-  at(tGEnd, { type: 'result', run: 'guarded', label: 'Guarded LLM policy (live)', status: 'COMPLETED', task_completed: true, disengaged: true, reseated: true, cable_contact: false, peak_force_n: 0.0, min_clearance_mm: 12.1, max_displacement_mm: 35.0, final_displacement_mm: 0.2, note: 'Transceiver disengaged 35 mm and reseated; cable untouched' });
+  at(tGEnd, { type: 'policy_ids', original_sha256: SHA_ORIG, approved_sha256: SHA_REV, executed_sha256: SHA_REV, executed_matches_approved: true });
+  at(tGEnd, { type: 'result', run: 'guarded', label: 'Guarded procedure (live)', status: 'COMPLETED', task_completed: true, disengaged: true, reseated: true, cable_contact: false, cable_within_force_limit: true, peak_force_n: 0.0, min_clearance_mm: 12.1, max_displacement_mm: 37.0, final_displacement_mm: 0.2, note: 'Transceiver disengaged 37 mm and reseated; cable untouched' });
   tl(tGEnd, 'ok', 'Task completed · cable untouched');
-  at(tGEnd + 80, { type: 'done', outcome: 'revised_passed', summary: 'Raw policy hit the cable at 287.9 N; guarded revision completed with 0.0 N contact' });
-  at(tGEnd + 80, { type: 'status', phase: 'done', message: 'Raw policy hit the cable at 287.9 N; guarded revision completed with 0.0 N contact' });
+  at(tGEnd + 80, { type: 'done', outcome: 'revised_passed', summary: 'Original hit the cable at 287.9 N; guarded revision completed with 0.0 N contact' });
+  at(tGEnd + 80, { type: 'status', phase: 'done', message: 'Original hit the cable at 287.9 N; guarded revision completed with 0.0 N contact' });
 }
-if (MOCK) { $('llmModel').textContent = 'qwen2.5-coder:7b'; setTimeout(function () { runMock($('task').value, false); }, 150); }
+
+/* --- navigation mock --- */
+var MOCK_MAP = { type: 'map', bounds: [-6, -5, 6, 5],
+  racks: [{ id: 'Rack A', x: -2.5, y: 1.8, w: 1.2, h: 0.8, face: 'south' }, { id: 'Rack B', x: 0, y: 1.8, w: 1.2, h: 0.8, face: 'south' }, { id: 'Rack C', x: 2.5, y: 1.8, w: 1.2, h: 0.8, face: 'south' },
+          { id: 'Rack D', x: -2.5, y: -1.8, w: 1.2, h: 0.8, face: 'north' }, { id: 'Rack E', x: 0, y: -1.8, w: 1.2, h: 0.8, face: 'north' }, { id: 'Rack F', x: 2.5, y: -1.8, w: 1.2, h: 0.8, face: 'north' }],
+  routes: { R1: { label: 'aisle (short)', waypoints: [[4.5, 0], [0, 0], [-2.5, 0], [-2.5, 0.9]], length_m: 7.9 },
+            R2: { label: 'north corridor (long)', waypoints: [[4.5, 0], [4.5, 3.2], [-4.5, 3.2], [-4.5, 0], [-2.5, 0], [-2.5, 0.9]], length_m: 18.3 } },
+  start: [4.5, 0.0], target: 'Rack A', target_point: [-2.5, 0.9],
+  obstacle: { x: 1.5, y: 0.0, w: 0.8, h: 0.6, label: 'maintenance cart' },
+  pose_source: 'MuJoCo simulator ground truth (no localisation estimate)' };
+function aabbs(M) {
+  var rs = [];
+  M.racks.forEach(function (r) { rs.push([r.x - r.w / 2, r.y - r.h / 2, r.x + r.w / 2, r.y + r.h / 2]); });
+  if (M.obstacle) { var o = M.obstacle; rs.push([o.x - o.w / 2, o.y - o.h / 2, o.x + o.w / 2, o.y + o.h / 2]); }
+  var b = M.bounds; rs.push([b[0] - 1, b[1] - 1, b[2] + 1, b[1]]); rs.push([b[0] - 1, b[3], b[2] + 1, b[3] + 1]); rs.push([b[0] - 1, b[1] - 1, b[0], b[3] + 1]); rs.push([b[2], b[1] - 1, b[2] + 1, b[3] + 1]);
+  return rs;
+}
+function rayBox(px, py, dx, dy, r) {
+  var tmin = 0, tmax = Infinity, t1, t2, tmp;
+  if (Math.abs(dx) < 1e-9) { if (px < r[0] || px > r[2]) return null; } else { t1 = (r[0] - px) / dx; t2 = (r[2] - px) / dx; if (t1 > t2) { tmp = t1; t1 = t2; t2 = tmp; } tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2); if (tmin > tmax) return null; }
+  if (Math.abs(dy) < 1e-9) { if (py < r[1] || py > r[3]) return null; } else { t1 = (r[1] - py) / dy; t2 = (r[3] - py) / dy; if (t1 > t2) { tmp = t1; t1 = t2; t2 = tmp; } tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2); if (tmin > tmax) return null; }
+  return tmin > 1e-6 ? tmin : null;
+}
+function castLidar(px, py, rects, n, maxR) {
+  var pts = [], min = Infinity;
+  for (var i = 0; i < n; i++) {
+    var a = i * Math.PI * 2 / n, dx = Math.cos(a), dy = Math.sin(a), best = Infinity;
+    rects.forEach(function (r) { var t = rayBox(px, py, dx, dy, r); if (t != null && t < best) best = t; });
+    if (best <= maxR) { pts.push([Math.round((px + dx * best) * 100) / 100, Math.round((py + dy * best) * 100) / 100]); if (best < min) min = best; }
+  }
+  return { pts: pts, min: isFinite(min) ? Math.round(min * 100) / 100 : null };
+}
+function pathLength(w) { var L = 0; for (var i = 1; i < w.length; i++) L += Math.hypot(w[i][0] - w[i - 1][0], w[i][1] - w[i - 1][1]); return L; }
+function pointAt(w, d) {
+  var acc = 0;
+  for (var i = 1; i < w.length; i++) {
+    var L = Math.hypot(w[i][0] - w[i - 1][0], w[i][1] - w[i - 1][1]);
+    if (acc + L >= d || i === w.length - 1) { var u = L > 0 ? Math.min(1, Math.max(0, (d - acc) / L)) : 1; return { x: w[i - 1][0] + (w[i][0] - w[i - 1][0]) * u, y: w[i - 1][1] + (w[i][1] - w[i - 1][1]) * u, heading: Math.atan2(w[i][1] - w[i - 1][1], w[i][0] - w[i - 1][0]) * 180 / Math.PI, wp: i }; }
+    acc += L;
+  }
+  return { x: w[0][0], y: w[0][1], heading: 0, wp: 0 };
+}
+function navSequence(M, routeId, run, predicted, spacing, stopEnvelope) {
+  var w = M.routes[routeId].waypoints, total = pathLength(w), rects = aabbs(M), out = [], blocked = false, t = 0;
+  for (var d = 0; d <= total + 1e-9 && !blocked; d += spacing) {
+    var dd = Math.min(d, total), p = pointAt(w, dd), lid = castLidar(p.x, p.y, rects, 36, 4.0);
+    var hd = p.heading * Math.PI / 180, ahead = Infinity;
+    lid.pts.forEach(function (q) { var vx = q[0] - p.x, vy = q[1] - p.y, along = vx * Math.cos(hd) + vy * Math.sin(hd), side = Math.abs(-vx * Math.sin(hd) + vy * Math.cos(hd)); if (along > 0 && side < 0.45 && along < ahead) ahead = along; });
+    blocked = isFinite(ahead) && ahead < stopEnvelope && dd < total - 0.5;
+    var atEnd = dd >= total - 1e-6, remaining = Math.max(0, total - dd);
+    out.push({ type: 'nav', run: run, t: Math.round(t * 10) / 10, predicted: predicted, pose: [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100, Math.round(((p.heading % 360) + 360) % 360)], pose_source: 'simulator ground truth',
+      route_id: routeId, route: w, waypoint_index: p.wp, lidar: lid.pts, lidar_min_m: lid.min, lidar_rays: 36,
+      blocked: blocked, blocked_at: blocked ? [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100] : null, arrived: atEnd, inspected: false,
+      distance_to_target_m: Math.round(remaining * 10) / 10, speed_mps: blocked || atEnd ? 0 : 1.2, _dist: dd });
+    t += spacing / 1.2;
+    if (atEnd) break;
+  }
+  return out;
+}
+function mockNavFrame(nav, run, step) {
+  var W = 640, H = 360, c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d');
+  g.fillStyle = '#0a0f1a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#121a2a'; g.beginPath(); g.moveTo(0, H); g.lineTo(W, H); g.lineTo(W * 0.62, H * 0.52); g.lineTo(W * 0.38, H * 0.52); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(56,189,248,0.15)'; for (var i = 0; i < 8; i++) { var y = H * 0.52 + (H * 0.48) * Math.pow(i / 8, 2); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  function rack(x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, h); g.strokeStyle = '#2b3648'; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
+  rack(40, 90, 150, 180, '#1b2537'); rack(450, 90, 150, 180, '#1b2537'); rack(200, 150, 60, 80, '#162033'); rack(380, 150, 60, 80, '#162033');
+  var d = nav.distance_to_target_m, near = Math.max(0, 1 - Math.min(d, 6) / 6);
+  if (nav.route_id === 'R1' && nav.blocked_at) { g.fillStyle = '#fbbf24'; g.fillRect(260, 190, 120, 70); g.fillStyle = '#111'; g.font = 'bold 13px sans-serif'; g.fillText('CART', 300, 230); }
+  if (near > 0.25) { var sz = 60 + near * 120; g.fillStyle = 'rgba(56,189,248,0.35)'; g.fillRect(W / 2 - sz / 2, H * 0.52 - sz * 0.9, sz, sz * 0.9); g.strokeStyle = '#38bdf8'; g.lineWidth = 2; g.strokeRect(W / 2 - sz / 2, H * 0.52 - sz * 0.9, sz, sz * 0.9); g.fillStyle = '#e0f2fe'; g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.fillText('Rack A', W / 2, H * 0.52 - sz * 0.45); g.textAlign = 'left'; }
+  g.fillStyle = '#94a3b8'; g.font = '12px sans-serif'; g.fillText('mock MuJoCo follow camera · ' + run + ' · step ' + step, 10, H - 10);
+  var phase = nav.inspected ? 'inspect' : nav.arrived ? 'idle' : nav.blocked ? 'idle' : 'drive';
+  return { type: 'frame', run: run, view: 'main', image: c.toDataURL('image/jpeg', 0.7), t: nav.t, hud: { phase: phase, step: step, speed_mps: nav.speed_mps, lidar_min_m: nav.lidar_min_m, distance_to_target_m: nav.distance_to_target_m }, labels: [] };
+}
+var NAV_ORIG = 'def policy(robot):\n    # Go to Rack A and inspect it.\n    robot.follow_route("R1")  # aisle (short), 7.9 m\n    robot.inspect_rack("Rack A")\n    return robot.status()\n';
+var NAV_REV = 'def policy(robot):\n    # Go to Rack A and inspect it.\n    # guard evidence: LiDAR found the maintenance cart blocking the aisle on R1\n    robot.follow_route("R2")  # north corridor (long), 18.3 m\n    robot.inspect_rack("Rack A")\n    return robot.status()\n';
+function runMockNavigation(task, recorded) {
+  var setup = { obstacle: true }, M = MOCK_MAP;
+  function at(ms, ev) { mockTimers.push(setTimeout(function () { safeHandle(typeof ev === 'function' ? ev() : ev); }, ms)); }
+  function tl(ms, level, text) { at(ms, { type: 'timeline', t: ms / 1000, level: level, text: text }); }
+  function sc(ms, run, seq, skill, args, step, result, sha) { at(ms, { type: 'skill_call', run: run, seq: seq, skill: skill, args: args, step: step, result: result, policy_sha256: sha, t: ms / 1000 }); }
+  at(0, { type: 'reset' });
+  at(10, mockSnapshot('navigation', task, setup));
+  if (recorded) at(20, { type: 'recorded', active: true, recorded_at: '2026-11-08T03:40:00Z', note: 'Recorded run' });
+  at(60, { type: 'mission', id: 'navigation', title: 'Rack navigation', prompt: DEFAULT_MISSIONS[1].prompt, setup: setup, main_view: 'map' });
+  at(100, { type: 'task', text: task });
+  at(150, { type: 'status', phase: 'generating', message: 'Asking qwen2.5-coder:7b for a procedure…' }); tl(150, 'info', 'Prompting local model (Ollama, qwen2.5-coder:7b)');
+  var toks = tokens(NAV_ORIG);
+  toks.forEach(function (tk, i) { at(250 + i * 30, { type: 'code_token', target: 'original', token: tk }); });
+  var tGen = 250 + toks.length * 30 + 60;
+  at(tGen, { type: 'code', target: 'original', code: NAV_ORIG, source: 'ollama:qwen2.5-coder:7b' }); tl(tGen, 'ok', 'Procedure received · 5 lines · AST whitelist passed');
+  at(tGen + 20, { type: 'policy_ids', original_sha256: SHA_ORIG, approved_sha256: null, executed_sha256: null, executed_matches_approved: null });
+  at(tGen + 40, { type: 'fairness', policy_sha256: SHA_ORIG, initial_state_sha256: SHA_STATE, raw_state_sha256: SHA_STATE, guarded_state_sha256: SHA_STATE, identical: true, seed: 11, setup: setup, note: 'Both paths start from the same saved state; the cart is in the aisle for both' });
+  at(tGen + 60, M);
+  at(tGen + 100, { type: 'status', phase: 'raw_run', message: 'Executing the original procedure in the sandbox' }); tl(tGen + 100, 'warn', 'Original procedure executing in the sandbox (no guard)');
+  var tRaw = tGen + 150, rawSeq = navSequence(M, 'R1', 'raw', false, 0.3, 0.5), dt = 110;
+  rawSeq.forEach(function (nv, i) {
+    at(tRaw + i * dt, nv);
+    at(tRaw + i * dt, { type: 'series', t: nv.t, run: 'raw', lidar_min_m: nv.lidar_min_m, speed_mps: nv.speed_mps, distance_to_target_m: nv.distance_to_target_m });
+    if (i % 3 === 0 || i === rawSeq.length - 1) at(tRaw + i * dt + 10, function () { return mockNavFrame(nv, 'raw', i); });
+  });
+  var last = rawSeq[rawSeq.length - 1], tRawEnd = tRaw + rawSeq.length * dt;
+  var blockedTxt = 'blocked at (' + last.pose[0].toFixed(1) + ', ' + last.pose[1].toFixed(1) + ') after ' + last._dist.toFixed(1) + ' m';
+  tl(tRawEnd - dt, 'fail', 'LiDAR return inside the stop envelope: robot halted, ' + blockedTxt);
+  sc(tRawEnd, 'raw', 1, 'follow_route', { route_id: 'R1' }, 140, blockedTxt, SHA_ORIG);
+  at(tRawEnd + 20, { type: 'result', run: 'raw', label: 'Original procedure (sandbox)', status: 'FAILED', task_completed: false, arrived: false, inspected: false, blocked: true, route_id: 'R1', distance_to_rack_m: last.distance_to_target_m, path_length_m: last._dist, lidar_min_m: last.lidar_min_m, note: 'Maintenance cart blocked the aisle; robot halted ' + last.distance_to_target_m.toFixed(1) + ' m short of Rack A and never inspected it' });
+  at(tRawEnd + 60, { type: 'status', phase: 'guard_check', message: 'Guard rolling the procedure out in the sandbox' }); tl(tRawEnd + 60, 'info', 'Guard: sandbox rollout of the original route');
+  var ghost1 = navSequence(M, 'R1', 'raw', true, 0.6, 0.5), tGh = tRawEnd + 100;
+  ghost1.forEach(function (nv, i) { at(tGh + i * 55, nv); });
+  var tGuard = tGh + ghost1.length * 55 + 150;
+  at(tGuard, { type: 'guard', stage: 'initial', decision: 'REJECTED', summary: 'Route R1 is blocked by a LiDAR obstacle ' + last._dist.toFixed(1) + ' m in; the robot never reaches Rack A', checks: [
+    { name: 'AST whitelist', passed: true, measured: 'ok', limit: 'imports forbidden; skills only', unit: '', detail: '' },
+    { name: 'Route clear of LiDAR obstacles', passed: false, measured: last.lidar_min_m, limit: 0.5, unit: 'm', detail: 'stop envelope breached on R1' },
+    { name: 'Reaches target point', passed: false, measured: last.distance_to_target_m, limit: 0.5, unit: 'm', detail: 'distance to Rack A when halted' },
+    { name: 'Rack inspected', passed: false, measured: 'no', limit: 'yes', unit: '', detail: '' }],
+    ensemble: [{ rollout: 0, route_id: 'R1', blocked: true, blocked_after_m: Math.round(last._dist * 10) / 10, lidar_min_m: last.lidar_min_m, distance_to_target_m: last.distance_to_target_m }],
+    omega: null, violation_probability: 1.0, risk_score: null, threshold: null });
+  at(tGuard + 20, { type: 'guard_message', stage: 'initial', verdict: 'REJECTED', text: 'The guard rejected the original procedure: in the sandbox rollout the LiDAR found the maintenance cart blocking the aisle ' + last._dist.toFixed(1) + ' m into route R1, so the robot would stop ' + last.distance_to_target_m.toFixed(1) + ' m short of Rack A and never inspect it. Evidence sent back to the model.' });
+  tl(tGuard + 20, 'fail', 'Guard REJECTED the procedure: route R1 blocked');
+  var tPatch = tGuard + 120;
+  at(tPatch, { type: 'status', phase: 'patching', message: 'LLM revising the route from the LiDAR evidence' }); tl(tPatch, 'info', 'Feeding rollout evidence back to the model');
+  var rt = tokens(NAV_REV);
+  rt.forEach(function (tk, i) { at(tPatch + 50 + i * 16, { type: 'code_token', target: 'revised', token: tk }); });
+  var tRev = tPatch + 50 + rt.length * 16 + 40;
+  at(tRev, { type: 'code', target: 'revised', code: NAV_REV, source: 'ollama:qwen2.5-coder:7b' });
+  at(tRev + 30, { type: 'diff', lines: simpleDiff(NAV_ORIG, NAV_REV), summary: 'route R1 (aisle, 7.9 m) -> R2 (north corridor, 18.3 m)' }); tl(tRev + 30, 'ok', 'Revision received: follow_route("R2")');
+  at(tRev + 80, { type: 'status', phase: 'guard_recheck', message: 'Rolling the revised route out in the sandbox' });
+  var ghost2 = navSequence(M, 'R2', 'guarded', true, 0.9, 0.5), tGh2 = tRev + 120;
+  ghost2.forEach(function (nv, i) { at(tGh2 + i * 45, nv); });
+  var g2last = ghost2[ghost2.length - 1], g2min = Math.min.apply(null, ghost2.map(function (n) { return isNum(n.lidar_min_m) ? n.lidar_min_m : 9; }));
+  var tGuard2 = tGh2 + ghost2.length * 45 + 120;
+  at(tGuard2, { type: 'guard', stage: 'revised', decision: 'APPROVED', summary: 'Route R2 reaches Rack A; min LiDAR clearance ' + g2min.toFixed(2) + ' m', checks: [
+    { name: 'AST whitelist', passed: true, measured: 'ok', limit: 'imports forbidden; skills only', unit: '', detail: '' },
+    { name: 'Route clear of LiDAR obstacles', passed: true, measured: g2min, limit: 0.5, unit: 'm', detail: '' },
+    { name: 'Reaches target point', passed: true, measured: g2last.distance_to_target_m, limit: 0.5, unit: 'm', detail: '' },
+    { name: 'Rack inspected', passed: true, measured: 'yes', limit: 'yes', unit: '', detail: '' }],
+    ensemble: [{ rollout: 0, route_id: 'R2', blocked: false, blocked_after_m: null, lidar_min_m: g2min, distance_to_target_m: g2last.distance_to_target_m }],
+    omega: null, violation_probability: 0.0, risk_score: null, threshold: null });
+  at(tGuard2 + 20, { type: 'guard_message', stage: 'revised', verdict: 'APPROVED', text: 'The guard approved the revised procedure: the sandbox rollout along the north corridor (R2, 18.3 m) reached Rack A with at least ' + g2min.toFixed(2) + ' m of LiDAR clearance. Executing it live.' });
+  at(tGuard2 + 30, { type: 'policy_ids', original_sha256: SHA_ORIG, approved_sha256: SHA_REV, executed_sha256: null, executed_matches_approved: null });
+  tl(tGuard2 + 20, 'ok', 'Guard APPROVED the revised route R2');
+  var tG = tGuard2 + 100;
+  at(tG, { type: 'status', phase: 'guarded_run', message: 'Executing the guarded procedure live' }); tl(tG, 'ok', 'Guarded procedure executing live');
+  var liveSeq = navSequence(M, 'R2', 'guarded', false, 0.45, 0.5), dt2 = 85;
+  liveSeq.forEach(function (nv, i) {
+    at(tG + 40 + i * dt2, nv);
+    at(tG + 40 + i * dt2, { type: 'series', t: nv.t, run: 'guarded', lidar_min_m: nv.lidar_min_m, speed_mps: nv.speed_mps, distance_to_target_m: nv.distance_to_target_m });
+    if (i % 3 === 0 || i === liveSeq.length - 1) at(tG + 40 + i * dt2 + 10, function () { return mockNavFrame(nv, 'guarded', i); });
+  });
+  var tLiveEnd = tG + 40 + liveSeq.length * dt2, L = liveSeq[liveSeq.length - 1];
+  sc(tLiveEnd, 'guarded', 1, 'follow_route', { route_id: 'R2' }, 610, 'arrived at (' + L.pose[0].toFixed(1) + ', ' + L.pose[1].toFixed(1) + ') after ' + L._dist.toFixed(1) + ' m', SHA_REV);
+  var insp = Object.assign({}, L, { inspected: true, t: L.t + 1.0 });
+  at(tLiveEnd + 150, insp);
+  at(tLiveEnd + 160, function () { return mockNavFrame(insp, 'guarded', liveSeq.length); });
+  sc(tLiveEnd + 170, 'guarded', 2, 'inspect_rack', { rack_id: 'Rack A' }, 650, 'inspected (0.3 m from rack)', SHA_REV);
+  at(tLiveEnd + 200, { type: 'policy_ids', original_sha256: SHA_ORIG, approved_sha256: SHA_REV, executed_sha256: SHA_REV, executed_matches_approved: true });
+  at(tLiveEnd + 200, { type: 'result', run: 'guarded', label: 'Guarded procedure (live)', status: 'COMPLETED', task_completed: true, arrived: true, inspected: true, blocked: false, route_id: 'R2', distance_to_rack_m: 0.3, path_length_m: Math.round(L._dist * 10) / 10, lidar_min_m: Math.min.apply(null, liveSeq.map(function (n) { return isNum(n.lidar_min_m) ? n.lidar_min_m : 9; })), note: 'Reached Rack A via the north corridor and inspected it; cart avoided' });
+  tl(tLiveEnd + 200, 'ok', 'Task completed · Rack A inspected via R2');
+  at(tLiveEnd + 260, { type: 'done', outcome: 'revised_passed', summary: 'Original route was blocked by the cart; guarded revision reached Rack A via R2' });
+  at(tLiveEnd + 260, { type: 'status', phase: 'done', message: 'Original route was blocked by the cart; guarded revision reached Rack A via R2' });
+}
+function runMock(task, recorded) {
+  mockStop();
+  if (UI.mission === 'navigation') runMockNavigation(task, recorded); else runMockTransceiver(task, recorded);
+}
+if (/[?&]tech=1/.test(Q)) { try { $('tech').open = true; } catch (e) {} }   /* screenshots: open Technical details */
+if (MOCK) {
+  if (QMISSION && missionById(QMISSION)) selectMission(QMISSION, false);
+  $('llmModel').textContent = MOCK_LLM.model; S.llm = MOCK_LLM;
+  setTimeout(function () { runMock($('task').value, false); }, 150);
+}
 })();
 </script>
 </body>
