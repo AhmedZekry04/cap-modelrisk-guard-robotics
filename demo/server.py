@@ -185,10 +185,13 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "ModelRiskGuard/2.0"
 
     def log_message(self, fmt, *args):  # quiet
-        line = args[0] if args else ""
-        if "/api/events" in line or "/static" in line or "/api/state" in line:
+        line = str(args[0]) if args else ""
+        if "/api/events" in line or "/static" in line or "/api/state" in line or "favicon" in line:
             return
-        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+        try:
+            sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+        except Exception:
+            pass
 
     # ---- helpers -------------------------------------------------------
     def _json(self, code, payload):
@@ -197,8 +200,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(body)
+        for i in range(0, len(body), 32768):       # chunked writes with flushes: large snapshots on Windows
+            self.wfile.write(body[i:i + 32768])
+            self.wfile.flush()
 
     def _file(self, path, ctype):
         try:

@@ -923,7 +923,8 @@ function renderSideStats() {
 }
 function renderSideImage() {
   var img = $('sideImg'), wrap = $('sideImgWrap'), thumb = $('wristThumb'), src = null, tsrc = null;
-  if (isNavMission()) src = S.last_frame.main && S.last_frame.main.image;
+  if (isNavMission() && mainView() === 'map') src = S.last_frame.main && S.last_frame.main.image;
+  else if (isNavMission()) src = null;                                  /* the live map occupies the side panel */
   else { src = S.last_frame.closeup && S.last_frame.closeup.image; tsrc = S.camera && S.camera.image; }
   if (src) { img.src = src; wrap.classList.add('has-frame'); } else { img.removeAttribute('src'); wrap.classList.remove('has-frame'); }
   if (tsrc) thumb.src = tsrc; else thumb.removeAttribute('src');
@@ -1266,8 +1267,9 @@ function renderAll() {
   renderStatus(); renderGuardMessage(); renderOriginal(); renderRevision(); renderSkills();
   renderResult('raw'); renderResult('guarded'); renderGuard(); renderFairness(); renderTimeline(); renderBanners();
   renderSideImage(); renderSideStats(); renderNavHud(S.nav); scheduleChart(); scheduleMap();
-  if (S.last_frame && S.last_frame.main && !isNavMission()) renderFrame(Object.assign({ view: 'main' }, S.last_frame.main));
-  else if (!isNavMission()) { renderHud(null); renderLabels([]); $('mainImg').removeAttribute('src'); $('camView').classList.remove('has-frame'); }
+  var mainIsCamera = !isNavMission() || mainView() === 'camera';
+  if (S.last_frame && S.last_frame.main && mainIsCamera) renderFrame(Object.assign({ view: 'main' }, S.last_frame.main));
+  else if (mainIsCamera) { renderHud(null); renderLabels([]); $('mainImg').removeAttribute('src'); $('camView').classList.remove('has-frame'); }
   if (isNavMission()) { if (S.nav) setRunLabel(S.nav.run, !!S.nav.predicted); else if (S.last_frame.main) setRunLabel(S.last_frame.main.run, false); else setRunLabel(null); }
   else if (!(S.last_frame && S.last_frame.main)) setRunLabel(null);
 }
@@ -1452,8 +1454,19 @@ if (!MOCK) {
   loadMissions().then(function () {
     if (!missionById(UI.mission)) UI.mission = MISSIONS[0].id;
     renderMissionSeg(); renderSetup(); applyView(); setTaskText(currentMission().prompt || ''); renderAll();
+    if (STATIC) return snapshotViaStream();          /* screenshots: one snapshot from the event stream, then stop */
     return fetch('/api/state').then(function (r) { return r.json(); }).then(function (sn) { if (sn && typeof sn === 'object') applySnapshot(sn); }).catch(function () {});
   }).then(connect);
+}
+function snapshotViaStream() {
+  return new Promise(function (resolve) {
+    var es, done = false;
+    function finish() { if (done) return; done = true; clearTimeout(t); try { es && es.close(); } catch (e) {} resolve(); }
+    var t = setTimeout(finish, 8000);
+    try { es = new EventSource('/api/events'); } catch (e) { finish(); return; }
+    es.onmessage = function (m) { try { var ev = JSON.parse(m.data); if (ev && ev.type === 'snapshot') applySnapshot(ev); } catch (e) {} finish(); };
+    es.onerror = finish;
+  });
 }
 
 /* ====================================================================
