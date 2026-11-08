@@ -124,6 +124,33 @@ def test_occluded_camera_holds_guarded_motion():
     print("[PASSED] test_occluded_camera_holds_guarded_motion")
 
 
+def test_unscripted_cable_shift_holds_then_replans_and_completes():
+    """Mid-run cable shift: sensors hold the pull, the model re-plans from the measured state, the re-plan is verified and completes."""
+    ticks = {"n": 0}
+
+    def disturb():
+        ticks["n"] += 1
+        return ticks["n"] > 25            # monitor ticks start after the approach: grip 12 ticks, then ~30 pull ticks
+    events = []
+    ComparisonRunner(events.append, agent=StubAgent(NAIVE_CODE, [SAFE_CODE]), seed=config.DEMO_SEED, render=False,
+                     disturb_flag=disturb).run("test task")
+    by = lambda t: [e for e in events if e["type"] == t]  # noqa: E731
+    d = by("disturbance")
+    assert d and d[0]["shift_mm"] > 0 and d[0]["phase"] == "pull"
+    verdicts = [g["verdict"] for g in by("guard_message")]
+    assert "HELD" in verdicts and verdicts[-1] == "APPROVED"
+    guarded = [r for r in by("result") if r["run"] == "guarded"][-1]
+    assert guarded["status"] == "COMPLETED" and guarded["task_completed"] is True and guarded["cable_contact"] is False
+    assert guarded["max_displacement_mm"] >= 1000 * config.PLUG_DISENGAGE_THRESHOLD_X
+    calls = [c for c in by("skill_call") if c["run"] == "guarded"]
+    assert any(str(c["result"]).startswith("held") for c in calls)
+    assert calls[-1]["skill"] == "execute_primitive" and calls[-1]["args"]["primitive"] == "push_linear"
+    pid = by("policy_ids")[-1]
+    assert pid["executed_matches_approved"] is True and all(c["policy_sha256"] == pid["approved_sha256"] for c in calls[-2:])
+    assert by("done")[-1]["outcome"] == "revised_passed"
+    print("[PASSED] test_unscripted_cable_shift_holds_then_replans_and_completes")
+
+
 if __name__ == "__main__":
     test_identical_policy_and_state_for_both_paths()
     test_unsafe_original_blocked_and_revision_completes_task()
@@ -132,4 +159,5 @@ if __name__ == "__main__":
     test_incomplete_and_violating_pulls_rejected_for_different_reasons()
     test_executed_skill_trace_matches_approved_policy()
     test_occluded_camera_holds_guarded_motion()
+    test_unscripted_cable_shift_holds_then_replans_and_completes()
     print("\n[SUCCESS] ALL DEMO COMPARISON TESTS PASSED CLEANLY.")

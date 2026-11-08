@@ -136,6 +136,11 @@ class StubAgent:
         self.calls += 1
         return self._stream(code, on_token)
 
+    def generate_replan(self, clearance_m, displacement_m, on_token=None):
+        code = ("def policy(robot):\n    robot.wait(1.0)\n"
+                f"    robot.execute_primitive(\"push_linear\", distance={displacement_m:.4f})\n")
+        return self._stream(code, on_token)
+
 
 def camera_event_payload(obs: dict, run: str, t: float, image=None) -> dict:
     """camera_frame event from a DataCenterRackEnv.camera_observation() result."""
@@ -255,7 +260,7 @@ class BaseRunner:
     result_label_guarded = "Guarded procedure (live)"
 
     def __init__(self, emit, agent=None, seed=config.DEMO_SEED, render=True, live_step_sleep=0.02,
-                 max_revisions=2, cancel_flag=None, setup=None):
+                 max_revisions=2, cancel_flag=None, setup=None, disturb_flag=None):
         self.emit = emit
         self.agent = agent or self.make_agent()
         self.seed = seed
@@ -263,6 +268,7 @@ class BaseRunner:
         self.live_step_sleep = live_step_sleep
         self.max_revisions = max_revisions
         self._cancel = cancel_flag or (lambda: False)
+        self._disturb = disturb_flag or (lambda: False)     # operator-triggered unscripted change during the guarded run
         self.setup = self.normalise_setup(setup or {})
         self.t0 = time.time()
         self.current_policy_sha = None
@@ -318,6 +324,10 @@ class BaseRunner:
 
     def install_monitor(self, env):
         """Install a runtime motion monitor on the guarded live env (may raise MotionHeld)."""
+
+    def replan_after_hold(self, env, reason):
+        """After a sensor hold: ask the model for a re-plan from the measured state, verify it, return (code, policy) or None."""
+        return None
 
     # ---- helpers ---------------------------------------------------------------
     def t(self) -> float:
@@ -543,12 +553,29 @@ class BaseRunner:
             self.install_monitor(env_g)
             self.policy_ids(policy_sha, approved_sha, approved_sha)   # the exact approved text is what runs
             outcome_g, err_g, held = self.execute(env_g, final_policy, "guarded")
+            replanned = False
+            if held:
+                self.guard_message("hold", "HELD", f"Motion held on sensor evidence: {err_g}. Asking the local model to re-plan from the measured state.")
+                log(f"Guarded motion HELD mid-run: {err_g}", "warn")
+                rp = self.replan_after_hold(env_g, err_g)
+                if rp is not None:
+                    code2, policy2 = rp
+                    label = "re-planned"
+                    approved_sha = sha256(code2)
+                    self.current_policy_sha = approved_sha
+                    self.policy_ids(policy_sha, approved_sha, approved_sha)
+                    self.status("guarded_run", "Re-plan verified in the sandbox from the held state; resuming on the live robot")
+                    log("Re-plan verified; resuming live execution from the held state", "ok")
+                    outcome_g, err_g, held = self.execute(env_g, policy2, "guarded")
+                    replanned = True
             env_g.close()
             if held:
                 g_status = "HELD"
             else:
                 g_status = "COMPLETED" if (outcome_g["task_completed"] and not err_g) else "FAILED"
             note_g = self.describe(outcome_g, err_g)
+            if replanned and g_status == "COMPLETED":
+                note_g = "Held on sensor evidence after the unscripted cable shift, re-planned by the model, verified, then " + note_g[0].lower() + note_g[1:]
             emit(self.result_event("guarded", self.result_label_guarded, g_status, outcome_g, note_g))
             log(f"GUARDED result: {g_status}. {note_g}", "ok" if g_status == "COMPLETED" else "fail")
             if held:
@@ -556,11 +583,11 @@ class BaseRunner:
                 self.status("withheld", "Guarded motion held during execution")
                 emit({"type": "done", "outcome": "held", "summary": note_g})
                 return
-            outcome = ("revised_passed" if label == "revised" else "original_passed") if g_status == "COMPLETED" else "error"
+            outcome = ("revised_passed" if label in ("revised", "re-planned") else "original_passed") if g_status == "COMPLETED" else "error"
             self.status("done", f"Guarded {label} procedure {g_status.lower()}; original procedure {raw_status.lower()}")
             emit({"type": "done", "outcome": outcome,
                   "summary": ("Original policy already passed the guard; no revision needed" if label == "original"
-                              else f"Revision passed the guard and completed the task; the original procedure: {note_raw}")})
+                              else (note_g if replanned else f"Revision passed the guard and completed the task; the original procedure: {note_raw}"))})
             return
 
         # withheld: show the last rejected candidate as a sandbox replay -----------------------
@@ -703,23 +730,89 @@ class TransceiverRunner(BaseRunner):
             return f"the wrist camera could not confirm the cable position ({obs['confidence']}: {obs['reason']})"
         return None
 
+    HOLD_CLEARANCE_M = 0.004
+
     def install_monitor(self, env):
-        state = {"bad": 0, "n": 0}
+        state = {"bad": 0, "n": 0, "disturbed": False}
 
         def monitor(e):
             state["n"] += 1
-            if state["n"] % 3:
-                return
+            # operator-triggered unscripted change: the cable carrier shifts toward the gripper mid-run
+            if not state["disturbed"] and self._disturb():
+                state["disturbed"] = True
+                clearance_now = max(0.0, e.get_lidar_distance())
+                shift = min(config.UNSCRIPTED_CABLE_SHIFT_X, max(0.0, clearance_now - 0.003))
+                e.inject_unscripted_obstacle(shift)
+                self.emit({"type": "disturbance", "t": round(self.t(), 3), "shift_mm": round(1000 * shift, 1),
+                           "displacement_mm": round(1000 * e._displacement_now(), 1), "phase": e.phase})
+                self.log(f"UNSCRIPTED CHANGE: the fibre cable carrier shifted {1000 * shift:.0f} mm toward the gripper "
+                         f"during '{e.phase}' at {1000 * e._displacement_now():.1f} mm of travel (operator-triggered)", "warn")
+            if e.phase != "pull" and state["n"] % 2:
+                return                              # every tick while pulling, every second tick otherwise
             obs = e.camera_observation(with_image=False)
             if obs["confidence"] == "confident":
                 state["bad"] = 0
-                if obs["camera_clearance_m"] is not None and obs["camera_clearance_m"] < 0.004 and e.phase == "pull":
-                    raise MotionHeld(f"camera clearance {1000 * obs['camera_clearance_m']:.1f} mm below the 4 mm hold threshold")
+                if obs["camera_clearance_m"] is not None and obs["camera_clearance_m"] < self.HOLD_CLEARANCE_M and e.phase == "pull":
+                    raise MotionHeld(f"wrist camera clearance {1000 * obs['camera_clearance_m']:.1f} mm below the "
+                                     f"{1000 * self.HOLD_CLEARANCE_M:.0f} mm hold threshold")
             else:
                 state["bad"] += 1
                 if state["bad"] >= 3 and e.phase == "pull":
                     raise MotionHeld(f"the wrist camera lost the cable for 3 consecutive observations ({obs['reason']})")
         env.motion_monitor = monitor
+
+    def replan_after_hold(self, env, reason):
+        """Re-plan from the measured state: the model gets the clearance and travel, the sandbox re-verifies before resuming."""
+        obs = env.camera_observation(with_image=False)
+        clearance = obs["camera_clearance_m"] if obs["camera_clearance_m"] is not None else env.get_lidar_distance()
+        disp = env._displacement_now()
+        self.status("patching", "Motion held on sensor evidence; local model re-planning from the measured state")
+        self.log(f"Re-plan request to {self.agent.model}: camera clearance {1000 * clearance:.1f} mm, travel {1000 * disp:.1f} mm "
+                 f"(contacts {'disengaged' if disp >= config.PLUG_DISENGAGE_THRESHOLD_X else 'still engaged'})")
+        code = self.agent.generate_replan(clearance, disp, on_token=lambda tok: self.emit({"type": "code_token", "target": "revised", "token": tok}))
+        source = getattr(self.agent, "last_source", None) or f"ollama:{self.agent.model}"
+        self.emit({"type": "code", "target": "revised", "code": code, "source": source})
+        self.emit({"type": "diff", "lines": diff_lines("", code), "summary": f"mid-run re-plan from {1000 * disp:.1f} mm of travel"})
+        ok, msg = validate_code_ast(code, allowed_methods=self.allowed_methods())
+        checks = [{"name": "AST whitelist", "passed": bool(ok), "measured": "ok" if ok else "violation",
+                   "limit": "no imports; robot skills only", "unit": "", "detail": msg}]
+        if not ok:
+            self.emit({"type": "guard", "stage": "revised", "decision": "REJECTED", "summary": f"Re-plan failed the static check: {msg}",
+                       "checks": checks, "ensemble": [], "omega": None, "violation_probability": None, "risk_score": None, "threshold": None})
+            self.guard_message("revised", "REJECTED", f"The re-plan was rejected by the static check ({msg}); the robot stays held.")
+            return None
+        policy = compile_policy(code)
+        # sandbox: same cable shift, same travel, then the re-plan
+        sb = self.make_env()
+        sb.approach()
+        sb.execute_primitive("grip_plug")
+        sb.execute_primitive("pull_linear", distance=disp, steps=max(1, int(round(disp / 0.00123))))
+        sb.inject_unscripted_obstacle(env.obstacle_shift_x)
+        error = None
+        try:
+            policy(sb)
+        except Exception as ex:
+            error = f"{type(ex).__name__}: {ex}"
+        oc = sb.outcome()
+        sb.close()
+        checks += [
+            {"name": "No cable contact in the re-plan", "passed": not oc["cable_contact"], "measured": round(oc["peak_force_n"], 1),
+             "limit": 0.0, "unit": "N", "detail": f"min clearance {oc['min_clearance_mm']:.1f} mm"},
+            {"name": "Plug reseated", "passed": oc["reseated"], "measured": round(oc["final_displacement_mm"], 1), "limit": 4.0, "unit": "mm",
+             "detail": error or ""},
+        ]
+        approved = all(c["passed"] for c in checks) and error is None
+        summary = ("Re-plan reseats the plug without touching the shifted cable" if approved
+                   else f"Re-plan rejected: {'; '.join(c['name'] for c in checks if not c['passed'])}" + (f" ({error})" if error else ""))
+        self.emit({"type": "guard", "stage": "revised", "decision": "APPROVED" if approved else "REJECTED", "summary": summary,
+                   "checks": checks, "ensemble": [{"particle": 0, "cable_shift_mm": round(1000 * env.obstacle_shift_x, 1),
+                                                   "start_travel_mm": round(1000 * disp, 1), **{k: oc[k] for k in ("peak_force_n", "min_clearance_mm", "final_displacement_mm")}}],
+                   "omega": None, "violation_probability": None, "risk_score": None, "threshold": None})
+        self.guard_message("revised", "APPROVED" if approved else "REJECTED",
+                           (f"The guard verified the re-plan from the held state (travel {1000 * disp:.0f} mm, cable now "
+                            f"{1000 * clearance:.0f} mm away): it reseats the plug without contact. Resuming." if approved
+                            else f"The re-plan did not pass ({summary}); the robot stays held."))
+        return (code, policy) if approved else None
 
 
 ComparisonRunner = TransceiverRunner

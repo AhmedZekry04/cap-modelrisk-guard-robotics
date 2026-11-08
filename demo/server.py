@@ -68,6 +68,7 @@ class Hub:
         self.clients = []
         self.state = self.empty_state()
         self.cancel_event = threading.Event()
+        self.disturb_event = threading.Event()
 
     @staticmethod
     def empty_state(mission="transceiver", setup=None):
@@ -276,6 +277,11 @@ class Handler(BaseHTTPRequestHandler):
             HUB.publish({"type": "status", "phase": "generating", "message": "Queued"})
             JOBS.put(("run", {"mission": mission, "task": task, "setup": setup}))
             return self._json(202, {"ok": True})
+        if path == "/api/disturb":
+            if HUB.state["phase"] != "guarded_run":
+                return self._json(409, {"error": "the unscripted change can only be triggered during the guarded live run", "phase": HUB.state["phase"]})
+            HUB.disturb_event.set()
+            return self._json(202, {"ok": True})
         if path == "/api/reset":
             HUB.cancel_event.set()
             HUB.publish({"type": "reset"})
@@ -301,7 +307,8 @@ def make_runner(job, args, emit, cancel):
         agent = (StubAgent(NAIVE_CODE, [SAFE_CODE], delay=0.01) if mission == "transceiver"
                  else StubAgent(NAV_STUB_INITIAL, [NAV_STUB_REVISED], delay=0.01))
     return cls(emit, agent=agent, seed=args.seed, render=True, live_step_sleep=args.step_sleep,
-               max_revisions=args.max_revisions, cancel_flag=cancel, setup=job.get("setup") or {})
+               max_revisions=args.max_revisions, cancel_flag=cancel, setup=job.get("setup") or {},
+               disturb_flag=HUB.disturb_event.is_set)
 
 
 def job_loop(args):
@@ -309,6 +316,7 @@ def job_loop(args):
     while True:
         kind, payload = JOBS.get()
         HUB.cancel_event.clear()
+        HUB.disturb_event.clear()
         cancel = HUB.cancel_event.is_set
         if kind == "replay":
             try:

@@ -24,7 +24,7 @@ Z_WORK = 0.90                    # Height of the target port above the floor
 # Sensors / unscripted disturbance
 LIDAR_MIN_CLEARANCE_M = 0.012    # Emergency halt if gripper-to-cable clearance drops below 12 mm
 LIDAR_MAX_RANGE_M = 0.20         # Maximum reported clearance
-UNSCRIPTED_CABLE_SHIFT_X = 0.010 # Unscripted disturbance: cable carrier shifts 10 mm toward the gripper
+UNSCRIPTED_CABLE_SHIFT_X = 0.009 # Unscripted disturbance: cable carrier shifts 9 mm toward the gripper
 
 # Live execution / dashboard
 LIVE_STEP_SLEEP_S = 0.03         # Pacing of live (rendered) execution per physics tick

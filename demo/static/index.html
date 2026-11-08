@@ -310,6 +310,7 @@ details.tech > summary:hover { color: var(--text); }
     <label class="tasklabel" for="task">Task</label>
     <textarea id="task" rows="1" spellcheck="false" placeholder="Describe the task for the robot"></textarea>
     <button class="btn primary" id="btnRun">Run</button>
+    <button class="btn" id="btnDisturb" title="Unscripted change: shift the fibre cable toward the gripper during the guarded live run" disabled>Shift cable (unscripted)</button>
     <button class="btn" id="btnReset">Reset</button>
     <button class="btn" id="btnReplay">Replay recorded run</button>
     <button class="btn" id="btnFull">Fullscreen</button>
@@ -546,6 +547,7 @@ function renderStatus() {
   if ((ph === 'done' || ph === 'withheld' || ph === 'held') && S.done && S.done.summary) msg = S.done.summary;
   $('pillMsg').textContent = msg; $('pillMsg').title = msg; pill.title = ph + (msg ? ' · ' + msg : '');
   $('btnRun').disabled = !!RUNNING[ph];
+  var bd = $('btnDisturb'); if (bd) bd.disabled = !(ph === 'guarded_run' && !isNavMission());
   $('btnReplay').disabled = !!RUNNING[ph];
   if (S.llm && S.llm.model) $('llmModel').textContent = S.llm.model;
 }
@@ -1326,6 +1328,15 @@ $('btnRun').addEventListener('click', function () {
 $('btnReset').addEventListener('click', function () {
   if (MOCK) { mockStop(); resetUI(); return; }
   post('/api/reset').catch(function () { toast('Backend unreachable'); });
+});
+$('btnDisturb').addEventListener('click', function () {
+  $('btnDisturb').disabled = true;
+  if (MOCK) { toast('Unscripted change is only available with the backend'); return; }
+  post('/api/disturb', {}).then(function (r) {
+    if (r.status === 409) toast('Trigger the unscripted change during the guarded live run');
+    else if (r.status >= 400) toast('Disturbance request failed: ' + r.status);
+    else toast('Unscripted change: cable carrier shifting toward the gripper');
+  }).catch(function () { toast('Backend unreachable'); });
 });
 $('btnReplay').addEventListener('click', function () {
   if (MOCK) { runMock($('task').value, true); return; }
